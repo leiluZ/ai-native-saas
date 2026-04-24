@@ -6,3 +6,4 @@ asyncpg==0.30.0
 redis==5.0.1
 python-multipart==0.0.9
 greenlet==3.4.0
+alembic==1.18.4
