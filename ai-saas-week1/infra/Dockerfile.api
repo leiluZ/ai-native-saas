@@ -1,5 +1,11 @@
 FROM node:20-alpine
 WORKDIR /app
-COPY app/api ./app/api
+
+COPY app/api/package.json ./app/api/package.json
 WORKDIR /app/app/api
-CMD ["node", "-e", "console.log('TODO: build and run api container')"]
+RUN npm install && npm install --no-save typescript tsx @types/node
+
+COPY app/api ./
+
+EXPOSE 4000
+CMD ["npm", "run", "dev"]

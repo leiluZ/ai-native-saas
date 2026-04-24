@@ -1,0 +1,44 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-added-large-files
+      - id: mixed-line-ending
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+        files: ^ai-saas-week1/.*\.(ts|tsx|js|jsx|json|md|yml|yaml|css|scss|html)$
+
+  - repo: local
+    hooks:
+      - id: api-typecheck-build
+        name: api typecheck/build
+        entry: bash -c "cd ai-saas-week1/app/api && npm run build"
+        language: system
+        pass_filenames: false
+        files: ^ai-saas-week1/app/api/|^ai-saas-week1/packages/shared/
+        stages: [pre-push]
+
+      - id: web-typecheck-build
+        name: web typecheck/build
+        entry: bash -c "cd ai-saas-week1/app/web && npm run build"
+        language: system
+        pass_filenames: false
+        files: ^ai-saas-week1/app/web/|^ai-saas-week1/packages/shared/
+        stages: [pre-push]
+
+      - id: shared-build
+        name: shared build
+        entry: bash -c "cd ai-saas-week1/packages/shared && npm run build"
+        language: system
+        pass_filenames: false
+        files: ^ai-saas-week1/packages/shared/
+        stages: [pre-push]
