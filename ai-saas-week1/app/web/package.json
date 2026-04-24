@@ -1,0 +1,10 @@
+{
+  "name": "@ai-saas/web",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  }
+}

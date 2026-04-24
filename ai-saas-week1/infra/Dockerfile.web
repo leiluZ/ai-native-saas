@@ -1,0 +1,5 @@
+FROM node:20-alpine
+WORKDIR /app
+COPY app/web ./app/web
+WORKDIR /app/app/web
+CMD ["node", "-e", "console.log('TODO: build and run web container')"]

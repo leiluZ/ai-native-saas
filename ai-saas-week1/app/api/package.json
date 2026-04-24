@@ -1,0 +1,10 @@
+{
+  "name": "@ai-saas/api",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  }
+}
