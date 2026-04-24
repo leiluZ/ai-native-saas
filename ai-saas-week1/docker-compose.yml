@@ -1,6 +1,7 @@
 version: "3.9"
 
 services:
+  # Node.js API（保留作为过渡，可逐步迁移到 backend）
   api:
     build:
       context: .
@@ -10,15 +11,74 @@ services:
       - "4000:4000"
     env_file:
       - .env
+    networks:
+      - ai-saas-network
 
+  # React 前端（连接到 FastAPI backend）
   web:
     build:
       context: .
       dockerfile: infra/Dockerfile.web
     container_name: ai-saas-web
     depends_on:
-      - api
+      - backend
     ports:
       - "3000:3000"
     env_file:
       - .env
+    environment:
+      - REACT_APP_API_URL=http://backend:8000/api/v1
+    networks:
+      - ai-saas-network
+
+  # FastAPI 后端（主 API 服务）
+  backend:
+    build:
+      context: ./app/backend
+      dockerfile: Dockerfile
+    container_name: ai-saas-backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    volumes:
+      - ./app/backend/src:/app/app
+    networks:
+      - ai-saas-network
+
+  # PostgreSQL 数据库
+  db:
+    image: postgres:16-alpine
+    container_name: ai-saas-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_saas
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ai-saas-network
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: ai-saas-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ai-saas-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  ai-saas-network:
+    driver: bridge
