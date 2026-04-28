@@ -46,15 +46,15 @@
 
 - **目标**：前端对接后端 API，实现基础聊天 UI 与流式响应占位。
 - **实操**：
-  1. `npm create vite@latest frontend -- --template vue-ts`
-  2. 安装 `@vueuse/core`、`tailwindcss`、`shadcn-vue`
+  1. `npm create vite@6.5.0 . -- --template react-ts`
+  2. 安装 `tailwindcss`、`@tailwindcss/vite`、`zustand`（可选状态管理）
   3. AI 生成 Chat 组件（输入框、消息列表、SSE 流式占位）
   4. 对接 `/api/v1/chat`，处理网络异常
 - **Prompt 模板**：
 
 ```md
-生成 Vue3 + TS + Tailwind 聊天界面。要求：
-- 使用 Composition API，状态用 Pinia
+生成 React + TS + Tailwind 聊天界面。要求：
+- 使用 Hooks，状态用 useState/useReducer 或 Zustand
 - 消息列表支持自动滚动、加载态、错误提示
 - 使用 EventSource 模拟流式响应（后端暂未接 AI）
 - 组件拆分为 ChatInput / MessageBubble / ChatContainer

@@ -4,8 +4,8 @@ A minimal monorepo scaffold for an AI SaaS starter project.
 
 ## Structure
 
-- `app/web`: frontend app (Vite + TS placeholder)
-- `app/api`: backend service (Node + TS placeholder)
+- `app/web`: frontend app (React + TS + Tailwind)
+- `app/backend`: backend service (FastAPI + PostgreSQL + Redis)
 - `packages/shared`: shared types/utils
 - `infra`: docker-related files
 - `docs`: architecture and notes

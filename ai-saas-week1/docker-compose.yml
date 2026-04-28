@@ -1,19 +1,6 @@
 version: "3.9"
 
 services:
-  # Node.js API（保留作为过渡，可逐步迁移到 backend）
-  api:
-    build:
-      context: .
-      dockerfile: infra/Dockerfile.api
-    container_name: ai-saas-api
-    ports:
-      - "4000:4000"
-    env_file:
-      - .env
-    networks:
-      - ai-saas-network
-
   # React 前端（连接到 FastAPI backend）
   web:
     build:
