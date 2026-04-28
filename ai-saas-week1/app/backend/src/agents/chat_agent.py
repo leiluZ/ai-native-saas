@@ -97,10 +97,13 @@ def get_llm() -> BaseChatModel:
         if not api_key:
             raise ValueError("Either OLLAMA_MODEL or OPENAI_API_KEY environment variable must be set")
 
+        openai_base_url = os.environ.get("OPENAI_BASE_URL")
+
         return ChatOpenAI(
             model=os.environ.get("OPENAI_MODEL", "gpt-3.5-turbo"),
             api_key=api_key,
-            temperature=0.7
+            temperature=0.7,
+            base_url=openai_base_url if openai_base_url else None
         )
 
 
