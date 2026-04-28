@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   web:
     build:
@@ -60,9 +58,24 @@ services:
     networks:
       - ai-saas-network
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ai-saas-ollama
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral}
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./infra/ollama-entrypoint.sh:/entrypoint.sh
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    networks:
+      - ai-saas-network
+
 volumes:
   postgres_data:
   redis_data:
+  ollama_data:
 
 networks:
   ai-saas-network:
