@@ -1,6 +1,5 @@
 """聊天消息模型"""
-from sqlalchemy import Column, String, DateTime, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, DateTime, Text, UUID
 from datetime import datetime
 import uuid
 from . import Base
