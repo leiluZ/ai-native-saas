@@ -1,12 +1,10 @@
-const root = document.getElementById("root");
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { ChatContainer } from "./components/ChatContainer";
+import "./index.css";
 
-if (!root) {
-  throw new Error("Root element #root not found");
-}
-
-root.innerHTML = `
-  <main style="font-family: sans-serif; padding: 24px;">
-    <h1>ai-saas-week1 web is running</h1>
-    <p>If you can see this page, Vite is serving correctly.</p>
-  </main>
-`;
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <ChatContainer />
+  </React.StrictMode>,
+);

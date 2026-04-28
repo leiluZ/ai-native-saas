@@ -1,7 +1,4 @@
-version: "3.9"
-
 services:
-  # React 前端（连接到 FastAPI backend）
   web:
     build:
       context: .
@@ -18,7 +15,6 @@ services:
     networks:
       - ai-saas-network
 
-  # FastAPI 后端（主 API 服务）
   backend:
     build:
       context: ./app/backend
@@ -33,10 +29,11 @@ services:
       - .env
     volumes:
       - ./app/backend/src:/app/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - ai-saas-network
 
-  # PostgreSQL 数据库
   db:
     image: postgres:16-alpine
     container_name: ai-saas-postgres
@@ -51,7 +48,6 @@ services:
     networks:
       - ai-saas-network
 
-  # Redis 缓存
   redis:
     image: redis:7-alpine
     container_name: ai-saas-redis
@@ -62,9 +58,24 @@ services:
     networks:
       - ai-saas-network
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ai-saas-ollama
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral}
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./infra/ollama-entrypoint.sh:/entrypoint.sh
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    networks:
+      - ai-saas-network
+
 volumes:
   postgres_data:
   redis_data:
+  ollama_data:
 
 networks:
   ai-saas-network:

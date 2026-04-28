@@ -4,13 +4,42 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as redis
 from uuid import uuid4
 from datetime import datetime
-from schemas.common import ResponseBase
-from schemas.chat import ChatMessageRequest, ChatMessageResponse, ChatHistoryResponse
-from dependencies import get_db, get_redis
+from app.schemas.common import ResponseBase
+from app.schemas.chat import ChatMessageRequest, ChatMessageResponse, ChatHistoryResponse, AgentRequest, AgentResponse
+from app.dependencies import get_db, get_redis
+from app.agents.chat_agent import run_agent
 
 router = APIRouter(prefix="/chat", tags=["聊天"])
 
 session_store = {}
+
+@router.post("/agent", summary="调用 LangChain Agent", response_model=ResponseBase[AgentResponse])
+async def chat_with_agent(request: Request, agent_request: AgentRequest):
+    """
+    使用 LangChain Agent 处理用户请求。
+
+    Agent 可以调用以下工具：
+    - get_weather: 获取天气信息
+    - get_current_time: 获取当前时间
+    - calculate: 执行数学计算
+
+    Args:
+        agent_request: 包含用户输入的请求对象
+
+    Returns:
+        Agent 的响应结果
+    """
+    request_id = request.state.request_id
+    try:
+        response_content = await run_agent(agent_request.prompt)
+        response = AgentResponse(
+            prompt=agent_request.prompt,
+            response=response_content,
+            timestamp=datetime.now()
+        )
+        return ResponseBase(code=200, message="success", data=response, request_id=request_id)
+    except Exception as e:
+        return ResponseBase(code=500, message=str(e), data=None, request_id=request_id)
 
 @router.post("/message", summary="发送聊天消息", response_model=ResponseBase[ChatMessageResponse])
 async def send_message(fastapi_request: Request, request: ChatMessageRequest, db: AsyncSession = Depends(get_db), redis_client: redis.Redis = Depends(get_redis)):
