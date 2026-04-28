@@ -1,31 +1,29 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-:root {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f3f4f6;
-  --bg-tertiary: #e5e7eb;
-  --text-primary: #111827;
-  --text-secondary: #6b7280;
-  --accent-primary: #3b82f6;
-  --accent-secondary: #6366f1;
-  --border-color: #e5e7eb;
-  --user-message: #3b82f6;
-  --assistant-message: #4b5563;
+@theme {
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f3f4f6;
+  --color-bg-tertiary: #e5e7eb;
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-accent-primary: #3b82f6;
+  --color-accent-secondary: #6366f1;
+  --color-border-color: #e5e7eb;
+  --color-user-message: #3b82f6;
+  --color-assistant-message: #4b5563;
 }
 
 .dark {
-  --bg-primary: #111827;
-  --bg-secondary: #1f2937;
-  --bg-tertiary: #374151;
-  --text-primary: #f9fafb;
-  --text-secondary: #9ca3af;
-  --accent-primary: #60a5fa;
-  --accent-secondary: #818cf8;
-  --border-color: #4b5563;
-  --user-message: #3b82f6;
-  --assistant-message: #d1d5db;
+  --color-bg-primary: #111827;
+  --color-bg-secondary: #1f2937;
+  --color-bg-tertiary: #374151;
+  --color-text-primary: #f9fafb;
+  --color-text-secondary: #9ca3af;
+  --color-accent-primary: #60a5fa;
+  --color-accent-secondary: #818cf8;
+  --color-border-color: #4b5563;
+  --color-user-message: #3b82f6;
+  --color-assistant-message: #d1d5db;
 }
 
 ::-webkit-scrollbar {
@@ -33,14 +31,14 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
+  background: var(--color-bg-secondary);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-tertiary);
+  background: var(--color-bg-tertiary);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
+  background: var(--color-text-secondary);
 }
