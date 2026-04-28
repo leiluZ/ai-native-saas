@@ -42,7 +42,7 @@
 
 - **目标**：先把用户交互闭环打通。
 - **实操**：
-  1. `Vite + Vue3 + TS + Pinia + Tailwind` 初始化。
+  1. `Vite + React + TS + Zustand + Tailwind` 初始化。
   2. 组件拆分：`ChatInput`, `MessageBubble`, `ChatContainer`。
   3. 流式占位：`EventSource` 或 fetch stream mock。
   4. 错误态：超时、断网、重试、空状态。

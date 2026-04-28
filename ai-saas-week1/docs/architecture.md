@@ -4,12 +4,11 @@
 
 本项目是一个 AI SaaS 应用，包含以下核心组件：
 
-| 组件              | 说明                     | 技术栈               |
-| ----------------- | ------------------------ | -------------------- |
-| `app/api`         | Node.js 后端 API 服务    | Node.js / TypeScript |
-| `app/web`         | 前端 Web 应用            | React / TypeScript   |
-| `app/backend`     | FastAPI 后端服务（新增） | Python / FastAPI     |
-| `packages/shared` | 通用契约和辅助类型       | TypeScript           |
+| 组件              | 说明               | 技术栈             |
+| ----------------- | ------------------ | ------------------ |
+| `app/web`         | 前端 Web 应用      | React / TypeScript |
+| `app/backend`     | FastAPI 后端服务   | Python / FastAPI   |
+| `packages/shared` | 通用契约和辅助类型 | TypeScript         |
 
 ---
 
@@ -18,10 +17,6 @@
 ```
 ai-saas-week1/
 ├── app/
-│   ├── api/                 # Node.js API 服务
-│   │   ├── src/
-│   │   ├── package.json
-│   │   └── tsconfig.json
 │   ├── web/                 # React 前端应用
 │   │   ├── src/
 │   │   ├── index.html
