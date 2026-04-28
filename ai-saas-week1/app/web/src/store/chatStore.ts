@@ -1,19 +1,8 @@
 import { create } from "zustand";
 import { Message, ChatState } from "../types";
 
-const STREAMING_DELAY = 50;
-
-const mockResponses = [
-  "我来帮您处理这个问题。首先，让我分析一下您的需求...",
-  "好的，我理解了。让我为您详细解释一下...",
-  "这个问题很有意思！让我从几个方面来分析...",
-  "根据您的描述，我认为最佳方案是...",
-  "感谢您的提问！这是一个很好的问题，让我来解答...",
-];
-
-const generateMockResponse = () => {
-  return mockResponses[Math.floor(Math.random() * mockResponses.length)];
-};
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
 
 interface ChatStore extends ChatState {
   sendMessage: (content: string) => Promise<void>;
@@ -83,14 +72,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     setStreaming(true);
 
     try {
-      const mockResponse = generateMockResponse();
-      let currentContent = "";
+      const response = await fetch(`${API_BASE_URL}/chat/agent`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ prompt: content }),
+      });
 
-      for (let i = 0; i < mockResponse.length; i++) {
-        await new Promise((resolve) => setTimeout(resolve, STREAMING_DELAY));
-        currentContent += mockResponse[i];
-        updateMessage(assistantMessage.id, currentContent);
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
       }
+
+      const data = await response.json();
+      const agentResponse = data.data?.response || "No response from agent";
+
+      updateMessage(assistantMessage.id, agentResponse);
 
       const messages = get().messages;
       const msgIndex = messages.findIndex((m) => m.id === assistantMessage.id);
@@ -103,8 +100,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         set({ messages: updatedMessages });
       }
     } catch (err) {
-      setError("网络连接失败，请重试");
-      updateMessage(assistantMessage.id, "❌ 发送失败，请重试");
+      setError(err instanceof Error ? err.message : "网络连接失败");
+      updateMessage(
+        assistantMessage.id,
+        "❌ 请求失败，请检查 Ollama 服务是否运行",
+      );
     } finally {
       setStreaming(false);
     }
