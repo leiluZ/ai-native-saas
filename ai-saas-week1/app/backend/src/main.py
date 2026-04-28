@@ -4,10 +4,10 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from uuid import uuid4
 import logging
-from config import settings
-from routes.v1 import router as v1_router
-from exceptions.handlers import register_exception_handlers
-from dependencies import engine, redis_client
+from app.config import settings
+from app.routes.v1 import router as v1_router
+from app.exceptions.handlers import register_exception_handlers
+from app.dependencies import engine, redis_client
 
 # 设置日志配置
 logging.basicConfig(

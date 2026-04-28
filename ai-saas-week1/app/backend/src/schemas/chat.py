@@ -22,3 +22,15 @@ class ChatMessageResponse(BaseModel):
 class ChatHistoryResponse(BaseModel):
     session_id: str = Field(..., description="会话ID")
     messages: List[ChatMessageResponse] = Field(..., description="消息列表")
+
+
+class AgentRequest(BaseModel):
+    """LangChain Agent 请求模型"""
+    prompt: str = Field(..., description="用户输入的提示词", max_length=4096)
+
+
+class AgentResponse(BaseModel):
+    """LangChain Agent 响应模型"""
+    prompt: str = Field(..., description="用户输入的提示词")
+    response: str = Field(..., description="Agent 返回的响应")
+    timestamp: datetime = Field(..., description="响应时间")
