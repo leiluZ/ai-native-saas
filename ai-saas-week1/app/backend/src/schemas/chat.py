@@ -27,6 +27,8 @@ class ChatHistoryResponse(BaseModel):
 class AgentRequest(BaseModel):
     """LangChain Agent 请求模型"""
     prompt: str = Field(..., description="用户输入的提示词", max_length=4096)
+    session_id: Optional[str] = Field(None, description="会话ID")
+    user_id: Optional[str] = Field("default_user", description="用户ID")
 
 
 class AgentResponse(BaseModel):

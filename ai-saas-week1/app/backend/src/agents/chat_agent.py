@@ -149,26 +149,42 @@ def parse_tool_call(text: str) -> tuple[Optional[str], Optional[dict]]:
     return None, None
 
 
-async def run_agent(prompt: str) -> str:
+async def run_agent(prompt: str, memory_context: Optional[dict] = None) -> str:
     try:
         llm = get_llm()
 
-        system_prompt = """You are a helpful assistant. When the user asks about weather, time, or calculations, you MUST call the appropriate tool.
+        # 构建会话记忆上下文
+        summary = memory_context.get("summary", "") if memory_context else ""
+        recent_turns = memory_context.get("recent_turns", []) if memory_context else []
 
-Available tools:
-- get_weather(location): Get weather for a city
-- get_current_time(timezone): Get current time (default: Asia/Shanghai)
-- calculate(expression): Calculate math expression
+        # 格式化最近对话
+        recent_turns_str = "\n".join(
+            [f"{turn['role']}: {turn['content']}" for turn in recent_turns]
+        )
 
-Instructions:
-1. If user asks about weather, call get_weather with the location
-2. If user asks about time, call get_current_time with timezone
-3. If user asks about math, call calculate with the expression
-4. After getting tool results, provide the final answer
+        # 动态构建 system prompt
+        memory_section = ""
+        if summary:
+            memory_section += f"对话摘要：\n{summary}\n\n"
+        if recent_turns_str:
+            memory_section += f"最近对话：\n{recent_turns_str}\n\n"
 
-IMPORTANT: Always actually call the tools, don't just describe what you would do."""
+        system_prompt = f"""你是一个乐于助人的助手。当用户询问天气、时间或计算问题时，你必须调用相应的工具。
 
-        full_prompt = f"{system_prompt}\n\nUser: {prompt}"
+{memory_section}可用工具：
+- get_weather(location): 获取城市天气
+- get_current_time(timezone): 获取当前时间（默认：Asia/Shanghai）
+- calculate(expression): 执行数学计算
+
+指令：
+1. 如果用户询问天气，调用 get_weather(location)
+2. 如果用户询问时间，调用 get_current_time(timezone)
+3. 如果用户询问数学问题，调用 calculate(expression)
+4. 获取工具结果后，提供最终答案
+
+重要：必须实际调用工具，不要只是描述你会做什么。"""
+
+        full_prompt = f"{system_prompt}\n\n用户：{prompt}"
 
         response = await llm.ainvoke(full_prompt)
         response_text = response.content if hasattr(response, 'content') else str(response)
@@ -187,3 +203,17 @@ IMPORTANT: Always actually call the tools, don't just describe what you would do
 
     except Exception as e:
         return f"Sorry, I encountered an error: {str(e)}. Please try again later."
+
+
+async def generate_summary(history_text: str) -> str:
+    """生成对话历史摘要"""
+    llm = get_llm()
+
+    summary_prompt = f"""将以下对话历史压缩为 3 句话摘要，保留用户意图与关键事实：
+
+{history_text}
+
+摘要："""
+
+    response = await llm.ainvoke(summary_prompt)
+    return response.content if hasattr(response, 'content') else str(response)
