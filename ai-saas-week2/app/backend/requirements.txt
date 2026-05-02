@@ -1,0 +1,16 @@
+fastapi==0.110.0
+uvicorn==0.29.0
+pydantic-settings==2.2.1
+sqlalchemy[asyncio]==2.0.31
+asyncpg==0.30.0
+redis==5.0.1
+python-multipart==0.0.9
+greenlet==3.4.0
+alembic==1.18.4
+langchain==0.3.1
+langchain-openai==0.2.0
+langchain-ollama==0.2.0
+langgraph==0.2.50
+langgraph-sdk>=0.1.32
+python-dotenv==1.0.1
+pytz==2024.1
