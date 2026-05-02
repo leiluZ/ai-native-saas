@@ -1,0 +1,120 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.web
+    container_name: ai-saas-web
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - REACT_APP_API_URL=http://backend:8000/api/v1
+    networks:
+      - ai-saas-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./app/backend
+      dockerfile: Dockerfile
+    container_name: ai-saas-backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    # === 开发模式：挂载源码热重载 ===
+    # volumes:
+    #   - ./app/backend/src:/app/app
+    #   - ./app/backend/tests:/app/tests
+    #
+    # === 生产模式：使用镜像内代码，无需挂载 ===
+    # volumes: []
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - ai-saas-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  db:
+    image: postgres:16-alpine
+    container_name: ai-saas-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_saas
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ai-saas-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_saas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai-saas-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ai-saas-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ai-saas-ollama
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral}
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./infra/ollama-entrypoint.sh:/entrypoint.sh
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    networks:
+      - ai-saas-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:
+
+networks:
+  ai-saas-network:
+    driver: bridge
