@@ -36,8 +36,13 @@ services:
         condition: service_healthy
     env_file:
       - .env
-    volumes:
-      - ./app/backend/src:/app/app
+    # === 开发模式：挂载源码热重载 ===
+    # volumes:
+    #   - ./app/backend/src:/app/app
+    #   - ./app/backend/tests:/app/tests
+    #
+    # === 生产模式：使用镜像内代码，无需挂载 ===
+    # volumes: []
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
