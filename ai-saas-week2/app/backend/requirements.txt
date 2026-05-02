@@ -11,6 +11,6 @@ langchain==0.3.1
 langchain-openai==0.2.0
 langchain-ollama==0.2.0
 langgraph==0.2.50
-langgraph-sdk==0.1.26
+langgraph-sdk>=0.1.32
 python-dotenv==1.0.1
 pytz==2024.1
