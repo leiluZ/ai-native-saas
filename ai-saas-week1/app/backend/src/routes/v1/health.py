@@ -1,6 +1,7 @@
 """健康检查路由"""
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 import redis.asyncio as redis
 from app.schemas.common import ResponseBase
 from app.dependencies import get_db, get_redis
@@ -13,7 +14,7 @@ async def health_check(request: Request, db: AsyncSession = Depends(get_db), red
     request_id = request.state.request_id
 
     try:
-        await db.execute("SELECT 1")
+        await db.execute(text("SELECT 1"))
         db_status = "healthy"
     except Exception as e:
         db_status = f"unhealthy: {str(e)}"
