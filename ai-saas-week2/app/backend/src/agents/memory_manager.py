@@ -1,7 +1,7 @@
 """记忆管理器模块 - 管理会话记忆和摘要"""
+
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-import json
 from .llm_client import get_llm
 from langchain_core.language_models import BaseChatModel
 
@@ -45,15 +45,13 @@ class MemoryManager:
             role: 角色（user 或 assistant）
             content: 内容
         """
-        self._recent_turns.append({
-            "role": role,
-            "content": content,
-            "timestamp": datetime.now().isoformat()
-        })
+        self._recent_turns.append(
+            {"role": role, "content": content, "timestamp": datetime.now().isoformat()}
+        )
 
         # 保持最近的对话轮次
         if len(self._recent_turns) > self._max_turns:
-            self._recent_turns = self._recent_turns[-self._max_turns:]
+            self._recent_turns = self._recent_turns[-self._max_turns :]
 
     def get_memory_context(self) -> Dict[str, Any]:
         """
@@ -62,10 +60,7 @@ class MemoryManager:
         Returns:
             Dict[str, Any]: 包含摘要和最近对话的上下文
         """
-        return {
-            "summary": self._summary,
-            "recent_turns": self._recent_turns
-        }
+        return {"summary": self._summary, "recent_turns": self._recent_turns}
 
     def clear(self) -> None:
         """清空所有记忆"""
@@ -102,7 +97,7 @@ class MemoryManager:
 摘要："""
 
         response = await self._llm.ainvoke(summary_prompt)
-        return response.content if hasattr(response, 'content') else str(response)
+        return response.content if hasattr(response, "content") else str(response)
 
     async def check_and_compress(self) -> bool:
         """
@@ -112,7 +107,9 @@ class MemoryManager:
             bool: 如果执行了压缩返回 True，否则返回 False
         """
         # 计算当前所有历史的 token 数
-        all_history = "\n".join([f"{turn['role']}: {turn['content']}" for turn in self._recent_turns])
+        all_history = "\n".join(
+            [f"{turn['role']}: {turn['content']}" for turn in self._recent_turns]
+        )
         total_tokens = self.estimate_tokens(all_history)
 
         if total_tokens > self._summary_token_threshold:
@@ -126,7 +123,9 @@ class MemoryManager:
         压缩记忆：生成摘要并保留最近几轮对话
         """
         # 生成摘要
-        history_text = "\n".join([f"{turn['role']}: {turn['content']}" for turn in self._recent_turns])
+        history_text = "\n".join(
+            [f"{turn['role']}: {turn['content']}" for turn in self._recent_turns]
+        )
         self._summary = await self.generate_summary(history_text)
 
         # 保留最近的几轮对话（保留上下文）
@@ -142,11 +141,13 @@ class MemoryManager:
         return {
             "summary": self._summary,
             "recent_turns": self._recent_turns,
-            "total_turns": self.total_turns
+            "total_turns": self.total_turns,
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], llm: Optional[BaseChatModel] = None) -> 'MemoryManager':
+    def from_dict(
+        cls, data: Dict[str, Any], llm: Optional[BaseChatModel] = None
+    ) -> "MemoryManager":
         """
         从字典反序列化
 

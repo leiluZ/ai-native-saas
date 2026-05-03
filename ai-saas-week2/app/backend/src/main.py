@@ -1,4 +1,5 @@
 """FastAPI主应用入口"""
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,18 +14,38 @@ from app.routes.v1 import router as v1_router
 from app.exceptions.handlers import register_exception_handlers
 from app.dependencies import engine, redis_client
 
+
 # 设置日志配置
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(request_id)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
-)
+class RequestIdFormatter(logging.Formatter):
+    def format(self, record):
+        if not hasattr(record, "request_id") or record.request_id is None:
+            record.request_id = "-"
+        return super().format(record)
+
+
+def setup_logging():
+    formatter = RequestIdFormatter(
+        fmt="%(asctime)s - %(levelname)s - %(request_id)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.handlers.clear()
+    root_logger.addHandler(handler)
+
+
+setup_logging()
 
 logger = logging.getLogger(__name__)
+
 
 # 请求上下文，存储 request_id
 class RequestContext:
     request_id: str = None
+
 
 request_context = RequestContext()
 
@@ -32,6 +53,7 @@ request_context = RequestContext()
 def wait_for_database(max_wait_seconds: int = 30):
     """等待数据库就绪"""
     import socket
+
     db_host = os.environ.get("DB_HOST", "db")
     db_port = int(os.environ.get("DB_PORT", "5432"))
 
@@ -52,7 +74,9 @@ def wait_for_database(max_wait_seconds: int = 30):
 
         time.sleep(1)
 
-    logger.error(f"数据库在 {max_wait_seconds} 秒内未就绪", extra={"request_id": "SYSTEM"})
+    logger.error(
+        f"数据库在 {max_wait_seconds} 秒内未就绪", extra={"request_id": "SYSTEM"}
+    )
     return False
 
 
@@ -64,23 +88,33 @@ def run_alembic_migrations():
             [sys.executable, "-m", "alembic", "upgrade", "head"],
             capture_output=True,
             text=True,
-            cwd="/app"
+            cwd="/app",
         )
         if result.returncode == 0:
             logger.info("数据库迁移完成", extra={"request_id": "SYSTEM"})
         else:
-            logger.warning(f"数据库迁移返回非零状态: {result.returncode}", extra={"request_id": "SYSTEM"})
+            logger.warning(
+                f"数据库迁移返回非零状态: {result.returncode}",
+                extra={"request_id": "SYSTEM"},
+            )
             if result.stdout:
-                logger.info(f"迁移输出: {result.stdout}", extra={"request_id": "SYSTEM"})
+                logger.info(
+                    f"迁移输出: {result.stdout}", extra={"request_id": "SYSTEM"}
+                )
             if result.stderr:
-                logger.warning(f"迁移错误: {result.stderr}", extra={"request_id": "SYSTEM"})
+                logger.warning(
+                    f"迁移错误: {result.stderr}", extra={"request_id": "SYSTEM"}
+                )
     except Exception as e:
         logger.error(f"运行数据库迁移时出错: {e}", extra={"request_id": "SYSTEM"})
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info(f"启动 {settings.app_name} v{settings.app_version}", extra={"request_id": "SYSTEM"})
+    logger.info(
+        f"启动 {settings.app_name} v{settings.app_version}",
+        extra={"request_id": "SYSTEM"},
+    )
     wait_for_database()
     run_alembic_migrations()
     yield
@@ -89,9 +123,20 @@ async def lifespan(app: FastAPI):
     logger.info(f"关闭 {settings.app_name}", extra={"request_id": "SYSTEM"})
 
 
-app = FastAPI(title=settings.app_name, version=settings.app_version, description="AI SaaS FastAPI 后端服务", lifespan=lifespan)
+app = FastAPI(
+    title=settings.app_name,
+    version=settings.app_version,
+    description="AI SaaS FastAPI 后端服务",
+    lifespan=lifespan,
+)
 
-app.add_middleware(CORSMiddleware, allow_origins=settings.allowed_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.middleware("http")
@@ -106,7 +151,9 @@ async def request_id_middleware(request: Request, call_next):
     request.state.request_id = request_id
 
     # 记录请求日志
-    logger.info(f"请求开始: {request.method} {request.url}", extra={"request_id": request_id})
+    logger.info(
+        f"请求开始: {request.method} {request.url}", extra={"request_id": request_id}
+    )
 
     # 执行请求
     response: Response = await call_next(request)
@@ -115,7 +162,10 @@ async def request_id_middleware(request: Request, call_next):
     response.headers["X-Request-ID"] = request_id
 
     # 记录响应日志
-    logger.info(f"请求结束: {request.method} {request.url} - {response.status_code}", extra={"request_id": request_id})
+    logger.info(
+        f"请求结束: {request.method} {request.url} - {response.status_code}",
+        extra={"request_id": request_id},
+    )
 
     return response
 

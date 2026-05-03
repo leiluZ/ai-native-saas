@@ -7,6 +7,7 @@ LangGraph 基础示例 - Day 1
 - Edges (连接节点的边)
 - 状态机编译与执行
 """
+
 from typing import TypedDict, Annotated, Sequence
 from langgraph.graph import StateGraph, END, START
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
@@ -15,6 +16,7 @@ import operator
 
 class AgentState(TypedDict):
     """Agent 状态 schema"""
+
     messages: Annotated[Sequence[BaseMessage], operator.add]
     next_action: str
     session_id: str
@@ -49,7 +51,9 @@ def process_node(state: AgentState) -> AgentState:
         return {"messages": [], "next_action": "respond"}
 
     last_message = messages[-1]
-    user_input = last_message.content if hasattr(last_message, 'content') else str(last_message)
+    user_input = (
+        last_message.content if hasattr(last_message, "content") else str(last_message)
+    )
 
     processed = f"已处理: {user_input}"
     return {"messages": [AIMessage(content=processed)], "next_action": "respond"}
@@ -70,7 +74,9 @@ def respond_node(state: AgentState) -> AgentState:
         return {"messages": [], "next_action": END}
 
     last_message = messages[-1]
-    content = last_message.content if hasattr(last_message, 'content') else str(last_message)
+    content = (
+        last_message.content if hasattr(last_message, "content") else str(last_message)
+    )
 
     response = AIMessage(content=f"最终回复: {content}")
     return {"messages": [response], "next_action": END}
@@ -104,21 +110,10 @@ def build_graph() -> StateGraph:
 
     graph.add_edge(START, "greet")
     graph.add_conditional_edges(
-        "greet",
-        should_continue,
-        {
-            "process": "process",
-            "respond": "respond",
-            END: END
-        }
+        "greet", should_continue, {"process": "process", "respond": "respond", END: END}
     )
     graph.add_conditional_edges(
-        "process",
-        should_continue,
-        {
-            "respond": "respond",
-            END: END
-        }
+        "process", should_continue, {"respond": "respond", END: END}
     )
     graph.add_edge("respond", END)
 
@@ -155,11 +150,13 @@ if __name__ == "__main__":
     app = build_graph()
 
     print("\n3. 执行图...")
-    result = app.invoke({
-        "messages": [HumanMessage(content="你好")],
-        "next_action": "",
-        "session_id": "test-session-1"
-    })
+    result = app.invoke(
+        {
+            "messages": [HumanMessage(content="你好")],
+            "next_action": "",
+            "session_id": "test-session-1",
+        }
+    )
 
     print("\n4. 执行结果:")
     for msg in result.get("messages", []):

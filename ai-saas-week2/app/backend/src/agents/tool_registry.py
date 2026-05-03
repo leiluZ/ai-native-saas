@@ -1,4 +1,5 @@
 """工具注册模块 - 管理所有可用工具"""
+
 from langchain.tools import tool
 from typing import Dict, Callable, Any, Optional
 from datetime import datetime
@@ -136,7 +137,9 @@ def calculate(expression: str) -> str:
         str: 计算结果
     """
     try:
-        allowed_names = {k: v for k, v in math.__dict__.items() if not k.startswith('_')}
+        allowed_names = {
+            k: v for k, v in math.__dict__.items() if not k.startswith("_")
+        }
         result = eval(expression, {"__builtins__": None}, allowed_names)
         return f"计算结果: {result}"
     except Exception as e:

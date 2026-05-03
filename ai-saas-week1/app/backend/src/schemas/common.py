@@ -1,4 +1,5 @@
 """通用响应模型"""
+
 from pydantic import BaseModel, Field
 from typing import Generic, TypeVar, Optional
 
@@ -12,7 +13,13 @@ class ResponseBase(BaseModel, Generic[T]):
     request_id: Optional[str] = Field(None, description="请求ID，用于日志追踪")
     extra: Optional[dict] = Field(None, description="额外信息")
 
-    model_config = {"json_schema_extra": {"examples": [{"code": 200, "message": "success", "data": {}, "request_id": "abc123"}]}}
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"code": 200, "message": "success", "data": {}, "request_id": "abc123"}
+            ]
+        }
+    }
 
 
 class ErrorResponse(BaseModel):
@@ -21,4 +28,15 @@ class ErrorResponse(BaseModel):
     detail: Optional[str] = Field(None, description="详细错误信息")
     request_id: Optional[str] = Field(None, description="请求ID，用于日志追踪")
 
-    model_config = {"json_schema_extra": {"examples": [{"code": 400, "message": "Bad Request", "detail": "Invalid parameter", "request_id": "abc123"}]}}
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "code": 400,
+                    "message": "Bad Request",
+                    "detail": "Invalid parameter",
+                    "request_id": "abc123",
+                }
+            ]
+        }
+    }
