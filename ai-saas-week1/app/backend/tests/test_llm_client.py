@@ -100,7 +100,7 @@ class TestLLMClient:
         """测试便捷函数 get_llm"""
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key")
 
-        with patch('app.agents.llm_client.LLMClient.get_llm') as mock_get_llm:
+        with patch('src.agents.llm_client.LLMClient.get_llm') as mock_get_llm:
             mock_instance = MagicMock()
             mock_get_llm.return_value = mock_instance
 
