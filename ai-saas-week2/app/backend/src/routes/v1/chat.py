@@ -1,11 +1,18 @@
 """聊天路由"""
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as redis
 from uuid import uuid4
 from datetime import datetime
 from app.schemas.common import ResponseBase
-from app.schemas.chat import ChatMessageRequest, ChatMessageResponse, ChatHistoryResponse, AgentRequest, AgentResponse
+from app.schemas.chat import (
+    ChatMessageRequest,
+    ChatMessageResponse,
+    ChatHistoryResponse,
+    AgentRequest,
+    AgentResponse,
+)
 from app.dependencies import get_db, get_redis
 from app.agents.chat_agent import run_agent, generate_summary
 from app.utils.session_memory import SessionMemoryManager
@@ -13,12 +20,14 @@ from app.utils.session_memory import SessionMemoryManager
 router = APIRouter(prefix="/chat", tags=["聊天"])
 
 
-@router.post("/agent", summary="调用 LangChain Agent", response_model=ResponseBase[AgentResponse])
+@router.post(
+    "/agent", summary="调用 LangChain Agent", response_model=ResponseBase[AgentResponse]
+)
 async def chat_with_agent(
     request: Request,
     agent_request: AgentRequest,
     db: AsyncSession = Depends(get_db),
-    redis_client: redis.Redis = Depends(get_redis)
+    redis_client: redis.Redis = Depends(get_redis),
 ):
     """
     使用 LangChain Agent 处理用户请求，支持会话记忆。
@@ -51,10 +60,14 @@ async def chat_with_agent(
         response_content = await run_agent(agent_request.prompt, memory_context)
 
         # 保存用户消息
-        await memory_manager.add_message(user_id, session_id, agent_request.prompt, "user")
+        await memory_manager.add_message(
+            user_id, session_id, agent_request.prompt, "user"
+        )
 
         # 保存助手响应
-        session_id, should_summarize = await memory_manager.add_message(user_id, session_id, response_content, "assistant")
+        session_id, should_summarize = await memory_manager.add_message(
+            user_id, session_id, response_content, "assistant"
+        )
 
         # 如果需要摘要压缩
         if should_summarize:
@@ -65,10 +78,12 @@ async def chat_with_agent(
         response = AgentResponse(
             prompt=agent_request.prompt,
             response=response_content,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
-        result = ResponseBase(code=200, message="success", data=response, request_id=request_id)
+        result = ResponseBase(
+            code=200, message="success", data=response, request_id=request_id
+        )
         result.extra = {"session_id": session_id}
         return result
 
@@ -76,12 +91,14 @@ async def chat_with_agent(
         return ResponseBase(code=500, message=str(e), data=None, request_id=request_id)
 
 
-@router.post("/message", summary="发送聊天消息", response_model=ResponseBase[ChatMessageResponse])
+@router.post(
+    "/message", summary="发送聊天消息", response_model=ResponseBase[ChatMessageResponse]
+)
 async def send_message(
     fastapi_request: Request,
     request: ChatMessageRequest,
     db: AsyncSession = Depends(get_db),
-    redis_client: redis.Redis = Depends(get_redis)
+    redis_client: redis.Redis = Depends(get_redis),
 ):
     request_id = fastapi_request.state.request_id
     session_id = request.session_id or str(uuid4())
@@ -89,7 +106,9 @@ async def send_message(
     memory_manager = SessionMemoryManager(db, redis_client)
 
     # 保存用户消息
-    await memory_manager.add_message(request.user_id, session_id, request.message, "user")
+    await memory_manager.add_message(
+        request.user_id, session_id, request.message, "user"
+    )
 
     # 生成 AI 响应
     ai_response = ChatMessageResponse(
@@ -98,21 +117,29 @@ async def send_message(
         content=f"AI收到您的消息: {request.message}",
         role="assistant",
         session_id=session_id,
-        created_at=datetime.now()
+        created_at=datetime.now(),
     )
 
     # 保存 AI 响应
-    await memory_manager.add_message(request.user_id, session_id, ai_response.content, "assistant")
+    await memory_manager.add_message(
+        request.user_id, session_id, ai_response.content, "assistant"
+    )
 
-    return ResponseBase(code=200, message="success", data=ai_response, request_id=request_id)
+    return ResponseBase(
+        code=200, message="success", data=ai_response, request_id=request_id
+    )
 
 
-@router.get("/history/{session_id}", summary="获取聊天历史", response_model=ResponseBase[ChatHistoryResponse])
+@router.get(
+    "/history/{session_id}",
+    summary="获取聊天历史",
+    response_model=ResponseBase[ChatHistoryResponse],
+)
 async def get_chat_history(
     request: Request,
     session_id: str,
     db: AsyncSession = Depends(get_db),
-    redis_client: redis.Redis = Depends(get_redis)
+    redis_client: redis.Redis = Depends(get_redis),
 ):
     """获取指定会话的完整聊天历史"""
     request_id = request.state.request_id
@@ -132,13 +159,15 @@ async def get_chat_history(
                 content=m["content"],
                 role=m["role"],
                 session_id=m["session_id"],
-                created_at=datetime.fromisoformat(m["created_at"])
+                created_at=datetime.fromisoformat(m["created_at"]),
             )
             for m in history
         ]
 
         chat_history = ChatHistoryResponse(session_id=session_id, messages=messages)
-        return ResponseBase(code=200, message="success", data=chat_history, request_id=request_id)
+        return ResponseBase(
+            code=200, message="success", data=chat_history, request_id=request_id
+        )
 
     except HTTPException as e:
         raise e

@@ -5,8 +5,16 @@ import { useChatStore } from "../store/chatStore";
 import { Moon, Sun, Trash2, RefreshCw } from "lucide-react";
 
 export const ChatContainer: React.FC = () => {
-  const { messages, theme, toggleTheme, clearMessages, error, setError } =
-    useChatStore();
+  const {
+    messages,
+    theme,
+    toggleTheme,
+    clearMessages,
+    error,
+    setError,
+    agentType,
+    setAgentType,
+  } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -30,6 +38,28 @@ export const ChatContainer: React.FC = () => {
             </h1>
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+              <button
+                onClick={() => setAgentType("agent")}
+                className={`px-3 py-1 rounded-md text-sm transition-colors ${
+                  agentType === "agent"
+                    ? "bg-blue-500 text-white"
+                    : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                }`}
+              >
+                Week1 Agent
+              </button>
+              <button
+                onClick={() => setAgentType("langgraph")}
+                className={`px-3 py-1 rounded-md text-sm transition-colors ${
+                  agentType === "langgraph"
+                    ? "bg-blue-500 text-white"
+                    : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                }`}
+              >
+                LangGraph
+              </button>
+            </div>
             <button
               onClick={clearMessages}
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors"

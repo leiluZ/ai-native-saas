@@ -1,6 +1,6 @@
 """工具注册模块测试"""
 import pytest
-from app.agents.tool_registry import ToolRegistry, get_weather, get_current_time, calculate, tool_registry
+from src.agents.tool_registry import ToolRegistry, get_weather, get_current_time, calculate, tool_registry
 
 
 class TestToolRegistry:

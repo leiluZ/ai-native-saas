@@ -4,8 +4,12 @@ import { Message, ChatState } from "../types";
 const API_BASE_URL =
   import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
 
+type AgentType = "agent" | "langgraph";
+
 interface ChatStore extends ChatState {
+  agentType: AgentType;
   sendMessage: (content: string) => Promise<void>;
+  setAgentType: (type: AgentType) => void;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -13,6 +17,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   isStreaming: false,
   error: null,
   theme: (localStorage.getItem("theme") as "light" | "dark") || "light",
+  agentType: "langgraph",
+
+  setAgentType: (type: AgentType) => {
+    set({ agentType: type });
+    localStorage.setItem("agentType", type);
+  },
 
   addMessage: (message: Message) => {
     set((state) => ({
@@ -71,13 +81,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     addMessage(assistantMessage);
     setStreaming(true);
 
+    const { agentType } = get();
+    const endpoint =
+      agentType === "langgraph"
+        ? `${API_BASE_URL}/langgraph/chat`
+        : `${API_BASE_URL}/chat/agent`;
+
+    const requestBody =
+      agentType === "langgraph" ? { message: content } : { prompt: content };
+
     try {
-      const response = await fetch(`${API_BASE_URL}/chat/agent`, {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ prompt: content }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {

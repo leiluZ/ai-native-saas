@@ -1,4 +1,5 @@
 """健康检查路由"""
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -10,7 +11,11 @@ router = APIRouter(prefix="/health", tags=["健康检查"])
 
 
 @router.get("/", summary="健康检查")
-async def health_check(request: Request, db: AsyncSession = Depends(get_db), redis_client: redis.Redis = Depends(get_redis)):
+async def health_check(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    redis_client: redis.Redis = Depends(get_redis),
+):
     request_id = request.state.request_id
 
     try:
@@ -25,4 +30,9 @@ async def health_check(request: Request, db: AsyncSession = Depends(get_db), red
     except Exception as e:
         redis_status = f"unhealthy: {str(e)}"
 
-    return ResponseBase(code=200, message="success", data={"api": "healthy", "database": db_status, "redis": redis_status}, request_id=request_id)
+    return ResponseBase(
+        code=200,
+        message="success",
+        data={"api": "healthy", "database": db_status, "redis": redis_status},
+        request_id=request_id,
+    )

@@ -1,6 +1,6 @@
 """LLM 客户端模块 - 统一管理 LLM 连接"""
+
 from langchain_core.language_models import BaseChatModel
-from typing import Optional
 import os
 
 
@@ -24,13 +24,18 @@ class LLMClient:
         if ollama_model:
             try:
                 from langchain_ollama import ChatOllama
+
                 return ChatOllama(
                     model=ollama_model,
                     temperature=0.7,
-                    base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+                    base_url=os.environ.get(
+                        "OLLAMA_BASE_URL", "http://localhost:11434"
+                    ),
                 )
             except ImportError:
-                raise ImportError("langchain-ollama 未安装，请运行 pip install langchain-ollama")
+                raise ImportError(
+                    "langchain-ollama 未安装，请运行 pip install langchain-ollama"
+                )
 
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
@@ -45,10 +50,12 @@ class LLMClient:
                 model=os.environ.get("OPENAI_MODEL", "gpt-3.5-turbo"),
                 api_key=api_key,
                 temperature=0.7,
-                base_url=openai_base_url if openai_base_url else None
+                base_url=openai_base_url if openai_base_url else None,
             )
         except ImportError:
-            raise ImportError("langchain-openai 未安装，请运行 pip install langchain-openai")
+            raise ImportError(
+                "langchain-openai 未安装，请运行 pip install langchain-openai"
+            )
 
 
 def get_llm() -> BaseChatModel:
