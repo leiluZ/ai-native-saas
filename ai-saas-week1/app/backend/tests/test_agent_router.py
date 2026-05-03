@@ -1,7 +1,7 @@
 """代理路由模块测试"""
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from app.agents.agent_router import AgentRouter
+from unittest.mock import AsyncMock, MagicMock
+from src.agents.agent_router import AgentRouter
 
 
 class TestAgentRouter:

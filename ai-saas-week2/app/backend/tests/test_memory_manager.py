@@ -1,6 +1,6 @@
 """记忆管理器测试"""
 import pytest
-from app.agents.memory_manager import MemoryManager
+from src.agents.memory_manager import MemoryManager
 
 
 class TestMemoryManager:
