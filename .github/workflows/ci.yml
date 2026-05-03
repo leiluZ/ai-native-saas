@@ -92,12 +92,10 @@ jobs:
           fi
 
       - name: Run backend tests for week1
-        env:
-          PYTHONPATH: ai-saas-week1/app/backend
         run: |
           if [ -d "ai-saas-week1/app/backend/tests/" ]; then
             cd ai-saas-week1/app/backend
-            pytest tests/test_llm_client.py \
+            PYTHONPATH=. pytest tests/test_llm_client.py \
                    tests/test_tool_registry.py \
                    tests/test_memory_manager.py \
                    tests/test_agent_router.py \
@@ -133,12 +131,10 @@ jobs:
           fi
 
       - name: Run backend tests for week2
-        env:
-          PYTHONPATH: ai-saas-week2/app/backend
         run: |
           if [ -d "ai-saas-week2/app/backend/tests/" ]; then
             cd ai-saas-week2/app/backend
-            pytest tests/test_llm_client.py \
+            PYTHONPATH=. pytest tests/test_llm_client.py \
                    tests/test_tool_registry.py \
                    tests/test_memory_manager.py \
                    tests/test_agent_router.py \
