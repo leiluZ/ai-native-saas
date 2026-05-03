@@ -1,6 +1,5 @@
 """LLM 客户端测试"""
 import pytest
-import os
 from unittest.mock import MagicMock, patch
 from app.agents.llm_client import LLMClient, get_llm
 
