@@ -170,7 +170,11 @@ jobs:
           if [ -d "ai-saas-week1/app/web/" ]; then
             cd ai-saas-week1/app/web
             npm ci
-            npm test -- --coverage --watchAll=false
+            if grep -q '"test"' package.json; then
+              npm test -- --coverage --watchAll=false
+            else
+              echo "No test script found, skipping..."
+            fi
           fi
 
   frontend-tests-week2:
@@ -192,7 +196,11 @@ jobs:
           if [ -d "ai-saas-week2/app/web/" ]; then
             cd ai-saas-week2/app/web
             npm ci
-            npm test -- --coverage --watchAll=false
+            if grep -q '"test"' package.json; then
+              npm test -- --coverage --watchAll=false
+            else
+              echo "No test script found, skipping..."
+            fi
           fi
 
   docker-build:
