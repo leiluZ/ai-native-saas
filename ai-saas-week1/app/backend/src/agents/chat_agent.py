@@ -10,7 +10,6 @@ from .tool_registry import get_weather, get_current_time, calculate, tool_regist
 from .memory_manager import MemoryManager
 from .agent_router import AgentRouter
 
-
 tools_map = {
     "get_weather": get_weather,
     "get_current_time": get_current_time,
