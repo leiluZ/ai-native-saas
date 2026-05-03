@@ -37,7 +37,23 @@ repos:
     rev: v3.1.0
     hooks:
       - id: prettier
+        name: prettier week1
         files: ^ai-saas-week1/.*\.(ts|tsx|js|jsx|json|md|yml|yaml|css|scss|html)$
+      - id: prettier
+        name: prettier week2
+        files: ^ai-saas-week2/.*\.(ts|tsx|js|jsx|json|md|yml|yaml|css|scss|html)$
+
+  - repo: https://github.com/adrienverge/yamllint.git
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        name: yamllint week1
+        args: ["-d", "relaxed"]
+        files: ^ai-saas-week1/.*\.(yml|yaml)$
+      - id: yamllint
+        name: yamllint week2
+        args: ["-d", "relaxed"]
+        files: ^ai-saas-week2/.*\.(yml|yaml)$
 
   - repo: local
     hooks:

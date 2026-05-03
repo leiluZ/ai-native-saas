@@ -5,8 +5,16 @@ import { useChatStore } from "../store/chatStore";
 import { Moon, Sun, Trash2, RefreshCw } from "lucide-react";
 
 export const ChatContainer: React.FC = () => {
-  const { messages, theme, toggleTheme, clearMessages, error, setError, agentType, setAgentType } =
-    useChatStore();
+  const {
+    messages,
+    theme,
+    toggleTheme,
+    clearMessages,
+    error,
+    setError,
+    agentType,
+    setAgentType,
+  } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

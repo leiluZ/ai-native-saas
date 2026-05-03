@@ -1,4 +1,5 @@
 """聊天相关模型"""
+
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, List
@@ -26,6 +27,7 @@ class ChatHistoryResponse(BaseModel):
 
 class AgentRequest(BaseModel):
     """LangChain Agent 请求模型"""
+
     prompt: str = Field(..., description="用户输入的提示词", max_length=4096)
     session_id: Optional[str] = Field(None, description="会话ID")
     user_id: Optional[str] = Field("default_user", description="用户ID")
@@ -33,6 +35,7 @@ class AgentRequest(BaseModel):
 
 class AgentResponse(BaseModel):
     """LangChain Agent 响应模型"""
+
     prompt: str = Field(..., description="用户输入的提示词")
     response: str = Field(..., description="Agent 返回的响应")
     timestamp: datetime = Field(..., description="响应时间")

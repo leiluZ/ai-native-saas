@@ -82,13 +82,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     setStreaming(true);
 
     const { agentType } = get();
-    const endpoint = agentType === "langgraph"
-      ? `${API_BASE_URL}/langgraph/chat`
-      : `${API_BASE_URL}/chat/agent`;
+    const endpoint =
+      agentType === "langgraph"
+        ? `${API_BASE_URL}/langgraph/chat`
+        : `${API_BASE_URL}/chat/agent`;
 
-    const requestBody = agentType === "langgraph"
-      ? { message: content }
-      : { prompt: content };
+    const requestBody =
+      agentType === "langgraph" ? { message: content } : { prompt: content };
 
     try {
       const response = await fetch(endpoint, {

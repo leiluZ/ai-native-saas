@@ -1,4 +1,5 @@
 """代理路由模块 - 核心代理逻辑"""
+
 from typing import Optional, Dict, Any, Tuple
 from langchain_core.language_models import BaseChatModel
 from .llm_client import get_llm
@@ -15,7 +16,7 @@ class AgentRouter:
         self,
         llm: Optional[BaseChatModel] = None,
         tool_reg: Optional[ToolRegistry] = None,
-        memory_manager: Optional[MemoryManager] = None
+        memory_manager: Optional[MemoryManager] = None,
     ):
         """
         初始化代理路由器
@@ -34,7 +35,9 @@ class AgentRouter:
         """获取记忆管理器"""
         return self._memory_manager
 
-    def parse_tool_call(self, text: str) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+    def parse_tool_call(
+        self, text: str
+    ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
         """
         从文本中解析工具调用
 
@@ -57,7 +60,7 @@ class AgentRouter:
 
         # 尝试正则表达式解析
         patterns = [
-            r'(\w+)\s*\(\s*([^)]+)\s*\)',
+            r"(\w+)\s*\(\s*([^)]+)\s*\)",
             r'"(\w+)"\s*:\s*\{[^}]*"arguments"[^}]*\{[^}]*"([^"]+)"[^}]*\}[^}]*\}',
         ]
 
@@ -74,7 +77,9 @@ class AgentRouter:
 
         return None, None
 
-    def _parse_tool_args(self, tool_name: str, args_str: str) -> Optional[Dict[str, Any]]:
+    def _parse_tool_args(
+        self, tool_name: str, args_str: str
+    ) -> Optional[Dict[str, Any]]:
         """
         解析工具参数
 
@@ -88,7 +93,9 @@ class AgentRouter:
         args: Dict[str, Any] = {}
 
         if tool_name == "get_weather":
-            loc_match = re.search(r'["\']?location["\']?\s*:\s*["\']([^"\']+)["\']', args_str)
+            loc_match = re.search(
+                r'["\']?location["\']?\s*:\s*["\']([^"\']+)["\']', args_str
+            )
             if loc_match:
                 args = {"location": loc_match.group(1)}
             else:
@@ -97,12 +104,16 @@ class AgentRouter:
                     args = {"location": simple_match.group(1)}
 
         elif tool_name == "get_current_time":
-            tz_match = re.search(r'["\']?timezone["\']?\s*:\s*["\']([^"\']+)["\']', args_str)
+            tz_match = re.search(
+                r'["\']?timezone["\']?\s*:\s*["\']([^"\']+)["\']', args_str
+            )
             if tz_match:
                 args = {"timezone": tz_match.group(1)}
 
         elif tool_name == "calculate":
-            expr_match = re.search(r'["\']?expression["\']?\s*:\s*["\']([^"\']+)["\']', args_str)
+            expr_match = re.search(
+                r'["\']?expression["\']?\s*:\s*["\']([^"\']+)["\']', args_str
+            )
             if expr_match:
                 args = {"expression": expr_match.group(1)}
             else:
@@ -112,7 +123,9 @@ class AgentRouter:
 
         return args if args else None
 
-    def _build_system_prompt(self, memory_context: Optional[Dict[str, Any]] = None) -> str:
+    def _build_system_prompt(
+        self, memory_context: Optional[Dict[str, Any]] = None
+    ) -> str:
         """
         构建系统提示词
 
@@ -132,14 +145,18 @@ class AgentRouter:
                 memory_section += f"对话摘要：\n{summary}\n\n"
 
             if recent_turns:
-                recent_turns_str = "\n".join([f"{turn['role']}: {turn['content']}" for turn in recent_turns])
+                recent_turns_str = "\n".join(
+                    [f"{turn['role']}: {turn['content']}" for turn in recent_turns]
+                )
                 memory_section += f"最近对话：\n{recent_turns_str}\n\n"
 
         # 构建工具列表
-        tools_list = "\n".join([
-            f"- {tool_name}: {self._get_tool_description(tool_name)}"
-            for tool_name in self._tool_registry.list_tools()
-        ])
+        tools_list = "\n".join(
+            [
+                f"- {tool_name}: {self._get_tool_description(tool_name)}"
+                for tool_name in self._tool_registry.list_tools()
+            ]
+        )
 
         return f"""你是一个乐于助人的助手。当用户询问天气、时间或计算问题时，你必须调用相应的工具。
 
@@ -167,11 +184,13 @@ class AgentRouter:
         descriptions = {
             "get_weather": "获取城市天气",
             "get_current_time": "获取当前时间（默认：Asia/Shanghai）",
-            "calculate": "执行数学计算"
+            "calculate": "执行数学计算",
         }
         return descriptions.get(tool_name, tool_name)
 
-    async def run(self, prompt: str, memory_context: Optional[Dict[str, Any]] = None) -> str:
+    async def run(
+        self, prompt: str, memory_context: Optional[Dict[str, Any]] = None
+    ) -> str:
         """
         运行代理
 
@@ -189,7 +208,9 @@ class AgentRouter:
 
             # 调用 LLM
             response = await self._llm.ainvoke(full_prompt)
-            response_text = response.content if hasattr(response, 'content') else str(response)
+            response_text = (
+                response.content if hasattr(response, "content") else str(response)
+            )
 
             # 解析工具调用
             tool_name, args = self.parse_tool_call(response_text)

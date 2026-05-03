@@ -7,6 +7,7 @@ LangGraph Router -> Executor -> Reviewer 协作链 - Day 2
 - ReviewerNode: 结果审查与重试
 - conditional_edges: 条件边实现路由
 """
+
 from typing import TypedDict, Annotated, Sequence
 from typing import Literal
 from langgraph.graph import StateGraph, END, START
@@ -15,13 +16,15 @@ import operator
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from app.agents.tool_registry import tool_registry
 
 
 class AgentState(TypedDict):
     """Agent 状态 schema"""
+
     messages: Annotated[Sequence[BaseMessage], operator.add]
     route: str
     tool_name: str
@@ -41,10 +44,15 @@ def router_node(state: AgentState) -> AgentState:
     """
     messages = state.get("messages", [])
     if not messages:
-        return {"route": "general", "tool_name": "", "tool_input": "", "approved": False}
+        return {
+            "route": "general",
+            "tool_name": "",
+            "tool_input": "",
+            "approved": False,
+        }
 
     last_message = messages[-1]
-    user_input = last_message.content if hasattr(last_message, 'content') else ""
+    user_input = last_message.content if hasattr(last_message, "content") else ""
 
     route = "general"
     tool_name = ""
@@ -63,14 +71,17 @@ def router_node(state: AgentState) -> AgentState:
         route = "time"
         tool_name = "get_current_time"
         tool_input = "Asia/Shanghai"
-    elif any(kw in user_lower for kw in ["计算", "calc", "+", "-", "*", "/", "=", "多少"]):
+    elif any(
+        kw in user_lower for kw in ["计算", "calc", "+", "-", "*", "/", "=", "多少"]
+    ):
         route = "calc"
         tool_name = "calculate"
         calc_expr = user_input
         for kw in ["计算", "calc", "多少", "是"]:
             calc_expr = calc_expr.replace(kw, "").strip()
         import re
-        calc_expr = re.sub(r'[^0-9+\-*/().]', '', calc_expr)
+
+        calc_expr = re.sub(r"[^0-9+\-*/().]", "", calc_expr)
         tool_input = calc_expr if calc_expr else "2+2"
     else:
         route = "general"
@@ -81,7 +92,7 @@ def router_node(state: AgentState) -> AgentState:
         "route": route,
         "tool_name": tool_name,
         "tool_input": tool_input,
-        "approved": False
+        "approved": False,
     }
 
 
@@ -107,7 +118,18 @@ def executor_node(state: AgentState) -> AgentState:
         result_message = response
     elif tool_name and tool_registry.has_tool(tool_name):
         try:
-            result = tool_registry.invoke_tool(tool_name, {"expression": tool_input} if route == "calc" else {"location": tool_input} if route == "weather" else {"timezone": tool_input})
+            result = tool_registry.invoke_tool(
+                tool_name,
+                (
+                    {"expression": tool_input}
+                    if route == "calc"
+                    else (
+                        {"location": tool_input}
+                        if route == "weather"
+                        else {"timezone": tool_input}
+                    )
+                ),
+            )
             result_message = result
         except Exception as e:
             result_message = f"执行错误: {str(e)}"
@@ -134,7 +156,9 @@ def reviewer_node(state: AgentState) -> AgentState:
     if not messages:
         return {"approved": False}
 
-    last_result = messages[-1].content if hasattr(messages[-1], 'content') else str(messages[-1])
+    last_result = (
+        messages[-1].content if hasattr(messages[-1], "content") else str(messages[-1])
+    )
 
     approved = len(last_result) > 5
     return {"approved": approved}
@@ -186,21 +210,11 @@ def build_collaboration_graph() -> StateGraph:
     graph.add_edge(START, "router")
 
     graph.add_conditional_edges(
-        "router",
-        route_decision,
-        {
-            "executor": "executor",
-            "reviewer": "reviewer"
-        }
+        "router", route_decision, {"executor": "executor", "reviewer": "reviewer"}
     )
 
     graph.add_conditional_edges(
-        "reviewer",
-        review_decision,
-        {
-            "executor": "executor",
-            END: END
-        }
+        "reviewer", review_decision, {"executor": "executor", END: END}
     )
 
     graph.add_edge("executor", "reviewer")
@@ -247,13 +261,15 @@ async def execute_example():
 
     for user_input, description in test_cases:
         print(f"\n3. 测试 [{description}]: {user_input}")
-        result = app.invoke({
-            "messages": [HumanMessage(content=user_input)],
-            "route": "",
-            "tool_name": "",
-            "tool_input": "",
-            "approved": False
-        })
+        result = app.invoke(
+            {
+                "messages": [HumanMessage(content=user_input)],
+                "route": "",
+                "tool_name": "",
+                "tool_input": "",
+                "approved": False,
+            }
+        )
         print(f"   路由: {result.get('route')}")
         print(f"   审核通过: {result.get('approved')}")
         print(f"   最终回复: {result['messages'][-1].content}")
@@ -261,4 +277,5 @@ async def execute_example():
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(execute_example())

@@ -3,6 +3,7 @@ Chat Agent - 主入口模块（向后兼容）
 
 此模块保留原有接口，内部使用拆分后的子模块实现。
 """
+
 from typing import Optional
 from .llm_client import get_llm
 from .tool_registry import get_weather, get_current_time, calculate, tool_registry
@@ -57,5 +58,5 @@ __all__ = [
     "MemoryManager",
     "AgentRouter",
     "run_agent",
-    "generate_summary"
+    "generate_summary",
 ]

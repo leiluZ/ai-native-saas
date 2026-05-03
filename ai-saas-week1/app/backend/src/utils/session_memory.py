@@ -1,4 +1,5 @@
 """会话记忆管理器"""
+
 from typing import List, Optional, Tuple, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -59,7 +60,9 @@ class SessionMemoryManager:
         row = result.first()
         return row[0] if row else 0
 
-    async def _get_recent_turns(self, session_id: str, max_turns: int = 5) -> List[dict]:
+    async def _get_recent_turns(
+        self, session_id: str, max_turns: int = 5
+    ) -> List[dict]:
         """获取最近的对话回合"""
         result = await self.db.execute(
             select(ChatMessage)
@@ -70,10 +73,7 @@ class SessionMemoryManager:
         messages = result.scalars().all()
         # 按时间排序（升序）
         messages = sorted(messages, key=lambda m: m.created_at)
-        return [
-            {"role": m.role, "content": m.content}
-            for m in messages
-        ]
+        return [{"role": m.role, "content": m.content} for m in messages]
 
     async def _get_full_history(self, session_id: str) -> str:
         """获取完整对话历史文本"""
@@ -88,15 +88,14 @@ class SessionMemoryManager:
             history_lines.append(f"{msg.role}: {msg.content}")
         return "\n".join(history_lines)
 
-    async def _create_session(self, user_id: str, session_id: Optional[str] = None) -> str:
+    async def _create_session(
+        self, user_id: str, session_id: Optional[str] = None
+    ) -> str:
         """创建新会话"""
         if not session_id:
             session_id = str(uuid4())
         new_session = ChatSession(
-            user_id=user_id,
-            session_id=session_id,
-            summary=None,
-            total_tokens=0
+            user_id=user_id, session_id=session_id, summary=None, total_tokens=0
         )
         self.db.add(new_session)
         await self.db.commit()
@@ -111,11 +110,7 @@ class SessionMemoryManager:
             await self._create_session(user_id, session_id)
 
     async def add_message(
-        self,
-        user_id: str,
-        session_id: str,
-        content: str,
-        role: str
+        self, user_id: str, session_id: str, content: str, role: str
     ) -> Tuple[str, bool]:
         """
         添加消息到会话
@@ -132,7 +127,7 @@ class SessionMemoryManager:
             session_id=session_id,
             content=content,
             role=role,
-            created_at=datetime.now()
+            created_at=datetime.now(),
         )
         self.db.add(new_message)
         await self.db.commit()
@@ -140,10 +135,7 @@ class SessionMemoryManager:
         # 更新 Redis TTL
         await self.redis_client.hset(
             f"session:{session_id}",
-            mapping={
-                "user_id": user_id,
-                "last_active": datetime.now().isoformat()
-            }
+            mapping={"user_id": user_id, "last_active": datetime.now().isoformat()},
         )
         await self.redis_client.expire(f"session:{session_id}", REDIS_TTL)
 
@@ -175,7 +167,7 @@ class SessionMemoryManager:
         return {
             "summary": summary,
             "recent_turns": recent_turns,
-            "total_tokens": total_tokens
+            "total_tokens": total_tokens,
         }
 
     async def get_history(self, session_id: str) -> List[dict]:
@@ -193,7 +185,7 @@ class SessionMemoryManager:
                 "content": m.content,
                 "role": m.role,
                 "session_id": m.session_id,
-                "created_at": m.created_at.isoformat()
+                "created_at": m.created_at.isoformat(),
             }
             for m in messages
         ]
