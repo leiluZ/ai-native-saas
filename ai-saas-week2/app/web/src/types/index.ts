@@ -4,6 +4,10 @@ export interface Message {
   content: string;
   timestamp: Date;
   isLoading?: boolean;
+  needsApproval?: boolean;
+  threadId?: string;
+  confidence?: number;
+  originalResult?: string;
 }
 
 export interface ChatState {
