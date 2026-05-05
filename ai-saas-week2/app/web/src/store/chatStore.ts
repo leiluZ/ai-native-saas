@@ -9,6 +9,11 @@ type AgentType = "agent" | "langgraph";
 interface ChatStore extends ChatState {
   agentType: AgentType;
   sendMessage: (content: string) => Promise<void>;
+  approveMessage: (
+    threadId: string,
+    approved: boolean,
+    modifiedResult?: string,
+  ) => Promise<void>;
   setAgentType: (type: AgentType) => void;
 }
 
@@ -84,13 +89,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { agentType } = get();
     const endpoint =
       agentType === "langgraph"
-        ? `${API_BASE_URL}/langgraph/chat`
+        ? `${API_BASE_URL}/chat/langgraph/human-in-loop`
         : `${API_BASE_URL}/chat/agent`;
 
     const requestBody =
-      agentType === "langgraph" ? { message: content } : { prompt: content };
+      agentType === "langgraph" ? { prompt: content } : { prompt: content };
 
     try {
+      console.log("[ChatStore] Sending request:", {
+        endpoint,
+        requestBody,
+        agentType,
+      });
+
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
@@ -104,8 +115,41 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
 
       const data = await response.json();
-      const agentResponse = data.data?.response || "No response from agent";
+      console.log(
+        "[ChatStore] Received response:",
+        JSON.stringify(data, null, 2),
+      );
 
+      if (data.code === 202 && data.extra?.needsApproval) {
+        const threadId = data.extra.threadId;
+        const confidence = data.extra.confidence;
+        const originalResult = data.data?.response || "";
+
+        console.log("[ChatStore] Needs approval:", {
+          threadId,
+          confidence,
+          originalResult,
+        });
+
+        set((state) => ({
+          messages: state.messages.map((msg) =>
+            msg.id === assistantMessage.id
+              ? {
+                  ...msg,
+                  content: originalResult,
+                  isLoading: false,
+                  needsApproval: true,
+                  threadId,
+                  confidence,
+                  originalResult,
+                }
+              : msg,
+          ),
+        }));
+        return;
+      }
+
+      const agentResponse = data.data?.response || "No response from agent";
       updateMessage(assistantMessage.id, agentResponse);
 
       const messages = get().messages;
@@ -126,6 +170,54 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       );
     } finally {
       setStreaming(false);
+    }
+  },
+
+  approveMessage: async (
+    threadId: string,
+    approved: boolean,
+    modifiedResult?: string,
+  ) => {
+    const { setError } = get();
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/chat/approve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          thread_id: threadId,
+          approved,
+          modified_result: modifiedResult,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.code === 200) {
+        const finalResult = approved
+          ? data.data.original_result
+          : data.data.modified_result || modifiedResult;
+
+        set((state) => ({
+          messages: state.messages.map((msg) =>
+            msg.threadId === threadId
+              ? {
+                  ...msg,
+                  content: `[已审批] ${finalResult}`,
+                  needsApproval: false,
+                }
+              : msg,
+          ),
+        }));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "审批请求失败");
     }
   },
 }));
