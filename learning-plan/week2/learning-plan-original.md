@@ -86,25 +86,26 @@
 
 - **目标**：实现多会话并发隔离，每会话独立记忆上下文。
 - **实操**：
-  1. 使用 `store` 参数配置独立 MemorySaver
-  2. 每个 `thread_id` 对应独立状态存储
-  3. 实现会话历史查询接口
-  4. 添加会话超时自动清理
-  5. 对接 Week1 的 MemoryManager
+  1. 扩展 `AgentState` 添加 `conversation_history: list[dict]` 和 `total_tokens: int`
+  2. 新增 `memory_node` - 每次对话追加到 history，超 token 阈值时设置 `needs_summarization=True`
+  3. 添加 `memory` 节点到图：`reviewer -> memory -> END`
+  4. 实现 `CheckpointManager.get_conversation_history()` 和 `get_session_info()`
+  5. 提供 `/api/v1/sessions/{thread_id}/history` 接口查询历史
+  6. 实现 `cleanup_stale_sessions()` 清理超时会话（30分钟无活动）
 - **Prompt 模板**：
 
 ```md
 为 LangGraph 实现会话级记忆隔离。要求：
-- 每个 thread_id 使用独立的 MemorySaver 存储
-- AgentState 包含 conversation_history: list[dict]
-- 每次对话追加到 history：{"role": "user", "content": "...", "timestamp": "..."}
-- 提供 /api/v1/sessions/{thread_id}/history 接口查询历史
-- 实现会话超时机制：30分钟无活动自动清理
-- 并发测试：同时运行 5 个不同 thread_id 的对话，验证无状态污染
-- 整合 Week1 的 memory_manager，实现 token 预算压缩
+- 扩展 AgentState：添加 conversation_history: list[dict] 和 total_tokens: int
+- 新增 memory_node：每次对话追加 user/assistant 消息到 history，超 TOKEN_THRESHOLD(8000) 时设置 needs_summarization=True
+- 图结构：router -> executor -> approval -> reviewer -> memory -> END
+- 实现 CheckpointManager.get_conversation_history() 和 get_session_info()
+- 提供 GET /api/v1/sessions/{thread_id}/history 接口返回会话历史和状态
+- 实现 cleanup_stale_sessions(max_age_seconds=1800) 清理30分钟无活动的会话
+- 复用全局单例 MemorySaver 确保所有 thread_id 状态隔离
 ```
 
-- **验收**：5 个并发会话状态完全隔离；会话历史可查询；30 分钟超时后状态清理；token 超限时自动摘要。
+- **验收**：会话历史正确存储和查询；5 并发会话状态隔离；30 分钟超时清理正常；`needs_summarization=True` 时可触发摘要压缩。
 
 ---
 
@@ -199,7 +200,7 @@
 | D1 | LangGraph StateGraph 可执行，简单 DAG 状态流转正确 |
 | D2 | Router 自动路由到正确工具，Reviewer 拒绝无效结果 |
 | D3 | pending_approval 状态触发中断，恢复后状态一致，checkpoint 自动清理 |
-| D4 | 5 并发会话状态隔离，会话历史可查询 |
+| D4 | 会话历史正确存储和查询；5 并发会话状态隔离；30 分钟超时清理正常 |
 | D5 | 超时重试、指数退避、熔断器正常工作 |
 | D6 | Week1 Agent 完整迁移，pytest 覆盖率 > 80% |
 | D7 | 轨迹可视化正常，100 并发测试通过 |
