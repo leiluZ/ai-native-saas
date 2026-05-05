@@ -14,12 +14,30 @@ from app.routes.v1 import router as v1_router
 from app.exceptions.handlers import register_exception_handlers
 from app.dependencies import engine, redis_client
 
+
 # 设置日志配置
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(request_id)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+class RequestIdFormatter(logging.Formatter):
+    def format(self, record):
+        if not hasattr(record, "request_id") or record.request_id is None:
+            record.request_id = "-"
+        return super().format(record)
+
+
+def setup_logging():
+    formatter = RequestIdFormatter(
+        fmt="%(asctime)s - %(levelname)s - %(request_id)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.handlers.clear()
+    root_logger.addHandler(handler)
+
+
+setup_logging()
 
 logger = logging.getLogger(__name__)
 

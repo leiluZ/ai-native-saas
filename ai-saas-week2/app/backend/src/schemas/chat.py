@@ -39,3 +39,24 @@ class AgentResponse(BaseModel):
     prompt: str = Field(..., description="用户输入的提示词")
     response: str = Field(..., description="Agent 返回的响应")
     timestamp: datetime = Field(..., description="响应时间")
+
+
+class ApprovalRequest(BaseModel):
+    """人工审批请求模型"""
+
+    thread_id: str = Field(..., description="线程ID，用于标识待审批的任务")
+    approved: bool = Field(..., description="是否批准 True=批准, False=拒绝")
+    modified_result: Optional[str] = Field(
+        None, description="修改后的结果（当 approved=False 时使用）"
+    )
+
+
+class ApprovalResponse(BaseModel):
+    """人工审批响应模型"""
+
+    thread_id: str = Field(..., description="线程ID")
+    approved: bool = Field(..., description="是否批准")
+    original_result: Optional[str] = Field(None, description="原始结果")
+    modified_result: Optional[str] = Field(None, description="修改后的结果")
+    confidence: float = Field(..., description="置信度")
+    status: str = Field(..., description="审批状态: pending/approved/rejected")
