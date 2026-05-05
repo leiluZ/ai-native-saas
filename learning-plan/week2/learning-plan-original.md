@@ -58,24 +58,27 @@
 
 - **目标**：实现人工介入机制，让 AI 在关键节点暂停等待人类决策。
 - **实操**：
-  1. 使用 `Command(resume={...})` 实现中断
-  2. 定义 `ApprovalNode` - 低置信度时触发人工审批
-  3. 实现 `interrupt_before` / `interrupt_after` 配置
-  4. 使用 `langgraph checkpointing` 保存中断状态
-  5. 提供 REST API 支持人类审批/拒绝
+  1. 使用 `pending_approval` 状态 + 条件边实现中断（避免使用不支持的 `Command(goto=END)`）
+  2. 定义 `ApprovalNode` - 低置信度时设置 `pending_approval=True`
+  3. 定义 `approval_decision` 条件边函数 - 当 `pending_approval=True` 且 `approved=False` 时返回 END
+  4. 使用全局单例 `MemorySaver` 确保 checkpoint 状态共享
+  5. 实现 `CheckpointManager` 管理 checkpoint 的保存、恢复和清理
+  6. 提供 REST API 支持人类审批/拒绝
 - **Prompt 模板**：
 
 ```md
 为 LangGraph 添加 Human-in-the-Loop 机制。要求：
-- 定义 ApprovalNode：当置信度 < 0.7 时返回 Command(resume={approved: False})
-- 使用 interrupt_before=["ApprovalNode"] 配置中断点
+- 定义 ApprovalNode：当置信度 < 0.7 时返回状态 update={pending_approval: True}
+- 定义 approval_decision 条件边函数：pending_approval=True 且 approved=False 时返回 END（暂停）
+- 使用 add_conditional_edges 配置条件边实现中断
+- 使用全局单例 MemorySaver（避免每次 build_graph 创建新实例导致状态不共享）
+- 实现 CheckpointManager：get_pending_state(), update_approval(), resume_and_get_result(), clear_thread()
 - 实现 /api/v1/chat/approve 接口，接受 {thread_id, approved: bool, modified_result}
-- 中断恢复后继续执行：approved=True 用原结果，approved=False 用修改结果
-- 使用 MemorySaver 实现状态持久化
+- 审批成功后自动清理 checkpoint（避免内存泄漏）
 - 附完整 API 和测试用例
 ```
 
-- **验收**：`Command(resume={...})` 可中断图执行；恢复后状态一致；API 可审批/拒绝；断线重连不丢状态。
+- **验收**：`pending_approval=True` 时图执行到 END；恢复后状态一致；API 可审批/拒绝；审批完成后 checkpoint 自动清理。
 
 ---
 
@@ -195,7 +198,7 @@
 |-----|---------|
 | D1 | LangGraph StateGraph 可执行，简单 DAG 状态流转正确 |
 | D2 | Router 自动路由到正确工具，Reviewer 拒绝无效结果 |
-| D3 | Command(resume) 中断和恢复成功，状态不丢失 |
+| D3 | pending_approval 状态触发中断，恢复后状态一致，checkpoint 自动清理 |
 | D4 | 5 并发会话状态隔离，会话历史可查询 |
 | D5 | 超时重试、指数退避、熔断器正常工作 |
 | D6 | Week1 Agent 完整迁移，pytest 覆盖率 > 80% |
