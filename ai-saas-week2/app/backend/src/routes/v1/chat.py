@@ -5,6 +5,7 @@ from uuid import uuid4
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 import redis.asyncio as redis
 from langchain_core.messages import HumanMessage
 
@@ -327,6 +328,82 @@ async def get_approval_status(
     )
 
 
+class SessionHistoryItem(BaseModel):
+    role: str
+    content: str
+    timestamp: str
+
+
+class SessionHistoryResponse(BaseModel):
+    thread_id: str
+    conversation_history: list[SessionHistoryItem]
+    total_tokens: int
+    needs_summarization: bool
+    pending_approval: bool
+    confidence: float
+
+
+@router.get(
+    "/sessions/{thread_id}/history",
+    summary="查询会话历史",
+    description="查询指定线程的会话历史和状态信息",
+    response_model=ResponseBase[SessionHistoryResponse],
+)
+async def get_session_history(
+    request: Request,
+    thread_id: str,
+):
+    """
+    查询会话历史 - 使用 LangGraph Checkpoint 机制
+
+    通过 checkpoint 获取会话历史和状态信息。
+
+    Args:
+        request: FastAPI 请求对象
+        thread_id: 线程ID
+
+    Returns:
+        会话历史信息
+    """
+    request_id = request.state.request_id
+
+    build_human_in_loop_graph()
+    session_info = checkpoint_manager.get_session_info(thread_id)
+
+    history_items = []
+    total_tokens = 0
+    needs_summarization = False
+    pending_approval = False
+    confidence = 1.0
+
+    if session_info:
+        history_items = [
+            SessionHistoryItem(
+                role=item["role"],
+                content=item["content"],
+                timestamp=item["timestamp"],
+            )
+            for item in session_info.get("conversation_history", [])
+        ]
+        total_tokens = session_info.get("total_tokens", 0)
+        needs_summarization = session_info.get("needs_summarization", False)
+        pending_approval = session_info.get("pending_approval", False)
+        confidence = session_info.get("confidence", 1.0)
+
+    response = SessionHistoryResponse(
+        thread_id=thread_id,
+        conversation_history=history_items,
+        total_tokens=total_tokens,
+        needs_summarization=needs_summarization,
+        pending_approval=pending_approval,
+        confidence=confidence,
+    )
+
+    return ResponseBase(
+        code=200, message="success", data=response, request_id=request_id
+    )
+
+
 @router.post(
     "/langgraph/human-in-loop",
     summary="使用 Human-in-the-Loop 执行聊天",
@@ -368,9 +445,21 @@ async def chat_with_human_in_loop(
         graph = build_human_in_loop_graph()
         config = {"configurable": {"thread_id": thread_id}}
 
-        logger.info(f"[ChatAPI] Invoking graph with thread_id='{thread_id}'")
+        existing_history = checkpoint_manager.get_conversation_history(thread_id)
+        existing_tokens = 0
+        session_info = checkpoint_manager.get_session_info(thread_id)
+        if session_info:
+            existing_tokens = session_info.get("total_tokens", 0)
+
+        logger.info(
+            f"[ChatAPI] Invoking graph with thread_id='{thread_id}', existing_history_len={len(existing_history)}"
+        )
         result = await graph.ainvoke(
-            {"messages": [HumanMessage(content=agent_request.prompt)]},
+            {
+                "messages": [HumanMessage(content=agent_request.prompt)],
+                "conversation_history": existing_history,
+                "total_tokens": existing_tokens,
+            },
             config,
         )
         logger.info(f"[ChatAPI] Graph result: {result}")

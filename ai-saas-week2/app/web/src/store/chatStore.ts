@@ -23,10 +23,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   error: null,
   theme: (localStorage.getItem("theme") as "light" | "dark") || "light",
   agentType: "langgraph",
+  currentThreadId: localStorage.getItem("threadId") || `thread-${Date.now()}`,
 
   setAgentType: (type: AgentType) => {
     set({ agentType: type });
     localStorage.setItem("agentType", type);
+  },
+
+  setCurrentThreadId: (threadId: string) => {
+    set({ currentThreadId: threadId });
+    localStorage.setItem("threadId", threadId);
   },
 
   addMessage: (message: Message) => {
@@ -62,7 +68,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   clearMessages: () => {
-    set({ messages: [] });
+    const newThreadId = `thread-${Date.now()}`;
+    set({ messages: [], currentThreadId: newThreadId });
+    localStorage.setItem("threadId", newThreadId);
   },
 
   sendMessage: async (content: string) => {
@@ -86,14 +94,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     addMessage(assistantMessage);
     setStreaming(true);
 
-    const { agentType } = get();
+    const { agentType, currentThreadId, setCurrentThreadId } = get();
     const endpoint =
       agentType === "langgraph"
         ? `${API_BASE_URL}/chat/langgraph/human-in-loop`
         : `${API_BASE_URL}/chat/agent`;
 
     const requestBody =
-      agentType === "langgraph" ? { prompt: content } : { prompt: content };
+      agentType === "langgraph"
+        ? { prompt: content, session_id: currentThreadId }
+        : { prompt: content };
 
     try {
       console.log("[ChatStore] Sending request:", {
@@ -124,6 +134,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const threadId = data.extra.threadId;
         const confidence = data.extra.confidence;
         const originalResult = data.data?.response || "";
+
+        if (threadId && threadId !== get().currentThreadId) {
+          setCurrentThreadId(threadId);
+        }
 
         console.log("[ChatStore] Needs approval:", {
           threadId,

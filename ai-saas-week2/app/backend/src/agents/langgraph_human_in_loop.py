@@ -9,6 +9,7 @@ LangGraph Human-in-the-Loop 机制 - Day 2
 """
 
 import logging
+from datetime import datetime
 from typing import TypedDict, Annotated, Sequence, Literal, Optional, Dict, Any
 from langgraph.graph import StateGraph, END, START
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
@@ -42,6 +43,8 @@ class AgentState(TypedDict):
     pending_approval: bool
     modified_result: Optional[str]
     original_result: Optional[str]
+    conversation_history: list[dict]
+    total_tokens: int
 
 
 def calculate_confidence(result: str, tool_name: str) -> float:
@@ -314,6 +317,86 @@ def reviewer_node(state: AgentState) -> AgentState:
         }
 
 
+TOKEN_THRESHOLD = 8000
+
+
+def memory_node(state: AgentState) -> AgentState:
+    """
+    记忆节点 - 保存对话历史并检查 token 预算
+
+    Args:
+        state: 当前状态
+
+    Returns:
+        更新后的状态
+    """
+    messages = state.get("messages", [])
+    conversation_history = state.get("conversation_history", [])
+    total_tokens = state.get("total_tokens", 0)
+
+    if len(messages) < 2:
+        return {
+            "conversation_history": conversation_history,
+            "total_tokens": total_tokens,
+        }
+
+    user_msg = None
+    assistant_msg = None
+
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            if assistant_msg and not user_msg:
+                user_msg = msg
+                break
+        elif isinstance(msg, AIMessage) and not assistant_msg:
+            assistant_msg = msg
+
+    if user_msg and assistant_msg:
+        user_content = (
+            user_msg.content if hasattr(user_msg, "content") else str(user_msg)
+        )
+        assistant_content = (
+            assistant_msg.content
+            if hasattr(assistant_msg, "content")
+            else str(assistant_msg)
+        )
+
+        conversation_history.append(
+            {
+                "role": "user",
+                "content": user_content,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
+        conversation_history.append(
+            {
+                "role": "assistant",
+                "content": assistant_content,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
+
+        user_tokens = len(user_content) // 4
+        assistant_tokens = len(assistant_content) // 4
+        total_tokens += user_tokens + assistant_tokens
+
+        logger.info(
+            f"[MemoryNode] Added 2 messages to history, total_tokens={total_tokens}, history_len={len(conversation_history)}"
+        )
+
+        if total_tokens > TOKEN_THRESHOLD:
+            logger.info(
+                f"[MemoryNode] Token threshold exceeded ({total_tokens} > {TOKEN_THRESHOLD}), needs summarization"
+            )
+            return {
+                "conversation_history": conversation_history,
+                "total_tokens": total_tokens,
+                "needs_summarization": True,
+            }
+
+    return {"conversation_history": conversation_history, "total_tokens": total_tokens}
+
+
 def route_decision(state: AgentState) -> Literal["executor", "reviewer"]:
     """
     条件边函数 - 决定下一步
@@ -368,6 +451,7 @@ def build_human_in_loop_graph() -> StateGraph:
     graph.add_node("executor", executor_node)
     graph.add_node("approval", approval_node)
     graph.add_node("reviewer", reviewer_node)
+    graph.add_node("memory", memory_node)
 
     graph.add_edge(START, "router")
 
@@ -381,7 +465,8 @@ def build_human_in_loop_graph() -> StateGraph:
         "approval", approval_decision, {"reviewer": "reviewer", "__end__": END}
     )
 
-    graph.add_edge("reviewer", END)
+    graph.add_edge("reviewer", "memory")
+    graph.add_edge("memory", END)
 
     checkpointer = _get_checkpointer()
     compiled_graph = graph.compile(checkpointer=checkpointer)
@@ -586,6 +671,139 @@ class CheckpointManager:
         except Exception:
             return True
 
+    def get_conversation_history(self, thread_id: str) -> list[dict]:
+        """
+        获取会话历史
+
+        Args:
+            thread_id: 线程ID
+
+        Returns:
+            会话历史列表
+        """
+        graph = self.get_graph()
+        if not graph:
+            return []
+
+        config = {"configurable": {"thread_id": thread_id}}
+        try:
+            state = graph.get_state(config)
+            if state and state.values:
+                return state.values.get("conversation_history", [])
+        except Exception as e:
+            logger.error(f"[CheckpointManager] Error getting conversation history: {e}")
+        return []
+
+    def get_session_info(self, thread_id: str) -> Optional[dict]:
+        """
+        获取会话信息
+
+        Args:
+            thread_id: 线程ID
+
+        Returns:
+            会话信息字典
+        """
+        graph = self.get_graph()
+        if not graph:
+            return None
+
+        config = {"configurable": {"thread_id": thread_id}}
+        try:
+            state = graph.get_state(config)
+            if state and state.values:
+                values = state.values
+                return {
+                    "thread_id": thread_id,
+                    "conversation_history": values.get("conversation_history", []),
+                    "total_tokens": values.get("total_tokens", 0),
+                    "needs_summarization": values.get("needs_summarization", False),
+                    "pending_approval": values.get("pending_approval", False),
+                    "confidence": values.get("confidence", 1.0),
+                }
+        except Exception as e:
+            logger.error(f"[CheckpointManager] Error getting session info: {e}")
+        return None
+
+    def update_last_active(self, thread_id: str) -> bool:
+        """
+        更新线程最后活跃时间
+
+        Args:
+            thread_id: 线程ID
+
+        Returns:
+            是否成功更新
+        """
+        graph = self.get_graph()
+        if not graph:
+            return False
+
+        config = {"configurable": {"thread_id": thread_id}}
+        try:
+            graph.update_state(config, {"last_active": datetime.now().isoformat()})
+            return True
+        except Exception as e:
+            logger.error(f"[CheckpointManager] Error updating last active: {e}")
+        return False
+
+    def get_stale_threads(self, max_age_seconds: int = 1800) -> list[str]:
+        """
+        获取超时的线程列表
+
+        Args:
+            max_age_seconds: 最大存活时间（秒），默认30分钟
+
+        Returns:
+            超时线程ID列表
+        """
+        from datetime import datetime, timedelta
+
+        graph = self.get_graph()
+        if not graph or not hasattr(graph, "checkpointer"):
+            return []
+
+        stale_threads = []
+        checkpointer = graph.checkpointer
+
+        if hasattr(checkpointer, "store"):
+            for thread_id in list(checkpointer.store.keys()):
+                config = {"configurable": {"thread_id": thread_id}}
+                try:
+                    state = graph.get_state(config)
+                    if state and state.values:
+                        last_active = state.values.get("last_active")
+                        if last_active:
+                            last_time = datetime.fromisoformat(last_active)
+                            if datetime.now() - last_time > timedelta(
+                                seconds=max_age_seconds
+                            ):
+                                stale_threads.append(thread_id)
+                except Exception:
+                    pass
+
+        return stale_threads
+
+    def cleanup_stale_sessions(self, max_age_seconds: int = 1800) -> int:
+        """
+        清理超时会话
+
+        Args:
+            max_age_seconds: 最大存活时间（秒），默认30分钟
+
+        Returns:
+            清理的会话数量
+        """
+        stale_threads = self.get_stale_threads(max_age_seconds)
+        cleaned = 0
+
+        for thread_id in stale_threads:
+            if self.clear_thread(thread_id):
+                cleaned += 1
+                logger.info(f"[CheckpointManager] Cleaned stale session: {thread_id}")
+
+        return cleaned
+
 
 checkpoint_manager = CheckpointManager()
 
@@ -602,12 +820,12 @@ graph TD
     START([开始]) --> ROUTER[router<br/>路由节点]
     ROUTER -->|route decision| COND1{条件判断}
     COND1 -->|weather/time/calc| EXECUTOR[executor<br/>执行器节点]
-    COND1 -->|general| APPROVAL{approval<br/>审批节点}
-    EXECUTOR --> APPROVAL
-    APPROVAL -->|confidence < 0.7| INTERRUPT([中断<br/>等待人工审批])
-    INTERRUPT -->|/api/v1/chat/approve| APPROVAL
-    APPROVAL -->|confidence >= 0.7| REVIEWER[reviewer<br/>审查节点]
-    REVIEWER --> END([结束])
+    COND1 -->|general| REVIEWER[reviewer<br/>审查节点]
+    EXECUTOR --> APPROVAL[approval<br/>审批节点]
+    APPROVAL -->|pending_approval=True| END
+    APPROVAL -->|pending_approval=False| REVIEWER
+    REVIEWER --> MEMORY[memory<br/>记忆节点]
+    MEMORY --> END([结束])
 ```"""
 
 
