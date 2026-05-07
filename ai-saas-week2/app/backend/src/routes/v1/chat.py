@@ -26,6 +26,7 @@ from app.agents.langgraph_human_in_loop import (
     build_human_in_loop_graph,
 )
 from app.utils.session_memory import SessionMemoryManager
+from app.utils.circuit_breaker import global_circuit_breaker
 
 logger = logging.getLogger(__name__)
 
@@ -527,3 +528,54 @@ async def chat_with_human_in_loop(
             data=None,
             request_id=request_id,
         )
+
+
+@router.get(
+    "/circuit/status",
+    summary="获取熔断器状态",
+    description="获取熔断器的当前状态（OPEN/HALF_OPEN/CLOSED）",
+    response_model=ResponseBase,
+)
+async def get_circuit_status(request: Request):
+    """
+    获取熔断器状态信息
+
+    Returns:
+        熔断器状态详情
+    """
+    request_id = request.state.request_id
+
+    status = global_circuit_breaker.get_status()
+
+    return ResponseBase(
+        code=200,
+        message="success",
+        data=status,
+        request_id=request_id,
+    )
+
+
+@router.post(
+    "/circuit/reset",
+    summary="重置熔断器",
+    description="手动重置熔断器到 CLOSED 状态",
+    response_model=ResponseBase,
+)
+async def reset_circuit(request: Request):
+    """
+    手动重置熔断器
+
+    Returns:
+        重置结果
+    """
+    request_id = request.state.request_id
+
+    global_circuit_breaker.reset()
+    logger.info("[CircuitAPI] Circuit breaker reset manually")
+
+    return ResponseBase(
+        code=200,
+        message="熔断器已重置",
+        data={"state": "CLOSED"},
+        request_id=request_id,
+    )

@@ -20,6 +20,8 @@ export const ChatContainer: React.FC = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [historyData, setHistoryData] = useState<any>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [circuitStatus, setCircuitStatus] = useState<any>({ state: "CLOSED" });
+  const [circuitLoading, setCircuitLoading] = useState(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -28,6 +30,71 @@ export const ChatContainer: React.FC = () => {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
+
+  useEffect(() => {
+    fetchCircuitStatus();
+    const interval = setInterval(fetchCircuitStatus, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchCircuitStatus = async () => {
+    setCircuitLoading(true);
+    try {
+      const response = await fetch(
+        `${
+          import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+        }/chat/circuit/status`,
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setCircuitStatus(data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch circuit status:", err);
+    } finally {
+      setCircuitLoading(false);
+    }
+  };
+
+  const resetCircuit = async () => {
+    try {
+      const response = await fetch(
+        `${
+          import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+        }/chat/circuit/reset`,
+        { method: "POST" },
+      );
+      if (response.ok) {
+        await fetchCircuitStatus();
+      }
+    } catch (err) {
+      console.error("Failed to reset circuit:", err);
+    }
+  };
+
+  const getCircuitColor = () => {
+    switch (circuitStatus.state) {
+      case "OPEN":
+        return "bg-red-500";
+      case "HALF_OPEN":
+        return "bg-yellow-500";
+      case "CLOSED":
+      default:
+        return "bg-green-500";
+    }
+  };
+
+  const getCircuitText = () => {
+    switch (circuitStatus.state) {
+      case "OPEN":
+        return "熔断中";
+      case "HALF_OPEN":
+        return "恢复中";
+      case "CLOSED":
+      default:
+        return "正常";
+    }
+  };
 
   const fetchSessionHistory = async () => {
     setHistoryLoading(true);
@@ -101,6 +168,25 @@ export const ChatContainer: React.FC = () => {
             >
               <History className="w-5 h-5" />
             </button>
+            <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-lg px-3 py-1">
+              <div
+                className={`w-2 h-2 rounded-full ${getCircuitColor()} ${
+                  circuitLoading ? "animate-pulse" : ""
+                }`}
+              />
+              <span className="text-xs text-gray-600 dark:text-gray-300">
+                {circuitLoading ? "加载中..." : getCircuitText()}
+              </span>
+              {circuitStatus.state === "OPEN" && (
+                <button
+                  onClick={resetCircuit}
+                  className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  title="重置熔断器"
+                >
+                  <RefreshCw className="w-3 h-3 text-gray-500" />
+                </button>
+              )}
+            </div>
             <button
               onClick={clearMessages}
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors"
