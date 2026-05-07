@@ -161,11 +161,24 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install dependencies and run tests for week1
+      - name: Install dependencies for week1
         run: |
           if [ -d "ai-saas-week1/app/web/" ]; then
             cd ai-saas-week1/app/web
             npm ci
+          fi
+
+      - name: Install Playwright Browsers for week1
+        run: |
+          if [ -d "ai-saas-week1/app/web/" ] && grep -q '"@playwright/test"' ai-saas-week1/app/web/package.json; then
+            cd ai-saas-week1/app/web
+            npx playwright install chromium --with-deps
+          fi
+
+      - name: Run tests for week1
+        run: |
+          if [ -d "ai-saas-week1/app/web/" ]; then
+            cd ai-saas-week1/app/web
             if grep -q '"test"' package.json; then
               npm test
             else
@@ -187,11 +200,24 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install dependencies and run tests for week2
+      - name: Install dependencies for week2
         run: |
           if [ -d "ai-saas-week2/app/web/" ]; then
             cd ai-saas-week2/app/web
             npm ci
+          fi
+
+      - name: Install Playwright Browsers for week2
+        run: |
+          if [ -d "ai-saas-week2/app/web/" ] && grep -q '"@playwright/test"' ai-saas-week2/app/web/package.json; then
+            cd ai-saas-week2/app/web
+            npx playwright install chromium --with-deps
+          fi
+
+      - name: Run tests for week2
+        run: |
+          if [ -d "ai-saas-week2/app/web/" ]; then
+            cd ai-saas-week2/app/web
             if grep -q '"test"' package.json; then
               npm test
             else
