@@ -239,7 +239,7 @@ jobs:
 
       - name: Install Docker Compose
         run: |
-          sudo apt-get update && sudo apt-get install -y docker-compose-plugin
+          pip install docker-compose
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -295,7 +295,7 @@ jobs:
 
       - name: Install Docker Compose
         run: |
-          sudo apt-get update && sudo apt-get install -y docker-compose-plugin
+          pip install docker-compose
 
       - name: Set up Node
         uses: actions/setup-node@v4
