@@ -30,11 +30,11 @@ USER appuser
 
 COPY --chown=appuser:appuser alembic.ini /app/
 COPY --chown=appuser:appuser migrations /app/migrations
-COPY --chown=appuser:appuser src/ /app/app
+COPY --chown=appuser:appuser src/ /app/src
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=5 \
     CMD curl -f http://localhost:8000/api/v1/health/ || exit 1
 
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -9,10 +9,10 @@ import subprocess
 import sys
 import time
 import os
-from app.config import settings
-from app.routes.v1 import router as v1_router
-from app.exceptions.handlers import register_exception_handlers
-from app.dependencies import engine, redis_client
+from src.config import settings
+from src.routes.v1 import router as v1_router
+from src.exceptions.handlers import register_exception_handlers
+from src.dependencies import engine, redis_client
 
 
 # 设置日志配置

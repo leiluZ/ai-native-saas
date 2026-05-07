@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as redis
 
-from app.schemas.common import ResponseBase
-from app.schemas.chat import (
+from src.schemas.common import ResponseBase
+from src.schemas.chat import (
     ChatMessageResponse,
     ChatHistoryResponse,
     AgentRequest,
@@ -18,16 +18,16 @@ from app.schemas.chat import (
     SessionHistoryResponse,
     SessionHistoryItem,
 )
-from app.dependencies import get_db, get_redis
-from app.agents.chat_agent import run_agent, generate_summary
-from app.agents.langgraph_chat_agent import (
+from src.dependencies import get_db, get_redis
+from src.agents.chat_agent import run_agent, generate_summary
+from src.agents.langgraph_chat_agent import (
     run_langgraph,
     update_approval,
     get_approval_status,
     get_session_info,
 )
-from app.utils.session_memory import SessionMemoryManager
-from app.utils.circuit_breaker import global_circuit_breaker, CircuitBreakerError
+from src.utils.session_memory import SessionMemoryManager
+from src.utils.circuit_breaker import global_circuit_breaker, CircuitBreakerError
 
 logger = logging.getLogger(__name__)
 

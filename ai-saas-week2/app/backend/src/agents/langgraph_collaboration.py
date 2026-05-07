@@ -19,7 +19,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from app.agents.tool_registry import tool_registry
+from .tool_registry import tool_registry
 
 
 class AgentState(TypedDict):

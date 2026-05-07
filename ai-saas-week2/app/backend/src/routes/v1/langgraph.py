@@ -10,8 +10,8 @@ from typing import Optional
 from datetime import datetime
 from uuid import uuid4
 
-from app.schemas.common import ResponseBase
-from app.agents.langgraph_collaboration import build_collaboration_graph
+from src.schemas.common import ResponseBase
+from src.agents.langgraph_collaboration import build_collaboration_graph
 from langchain_core.messages import HumanMessage
 
 router = APIRouter(prefix="/langgraph", tags=["LangGraph"])

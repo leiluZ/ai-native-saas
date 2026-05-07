@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 import redis.asyncio as redis
-from app.schemas.common import ResponseBase
-from app.dependencies import get_db, get_redis
-from app.agents.langgraph_chat_agent import run_langgraph
+from src.schemas.common import ResponseBase
+from src.dependencies import get_db, get_redis
+from src.agents.langgraph_chat_agent import run_langgraph
 
 router = APIRouter(prefix="/health", tags=["健康检查"])
 

@@ -32,7 +32,7 @@ import operator
 
 from .llm_client import get_llm
 from .tool_registry import tool_registry
-from app.utils.circuit_breaker import global_circuit_breaker, CircuitBreakerError
+from src.utils.circuit_breaker import global_circuit_breaker, CircuitBreakerError
 
 logger = logging.getLogger(__name__)
 
