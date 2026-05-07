@@ -5,32 +5,195 @@ from uuid import uuid4
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
 import redis.asyncio as redis
-from langchain_core.messages import HumanMessage
 
 from app.schemas.common import ResponseBase
 from app.schemas.chat import (
-    ChatMessageRequest,
     ChatMessageResponse,
     ChatHistoryResponse,
     AgentRequest,
     AgentResponse,
     ApprovalRequest,
     ApprovalResponse,
+    SessionHistoryResponse,
+    SessionHistoryItem,
 )
 from app.dependencies import get_db, get_redis
 from app.agents.chat_agent import run_agent, generate_summary
-from app.agents.langgraph_human_in_loop import (
-    checkpoint_manager,
-    build_human_in_loop_graph,
+from app.agents.langgraph_chat_agent import (
+    run_langgraph,
+    update_approval,
+    get_approval_status,
+    get_session_info,
 )
 from app.utils.session_memory import SessionMemoryManager
-from app.utils.circuit_breaker import global_circuit_breaker
+from app.utils.circuit_breaker import global_circuit_breaker, CircuitBreakerError
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["聊天"])
+
+
+@router.post(
+    "/langgraph/execute",
+    summary="使用 LangGraph 执行聊天",
+    description="使用 LangGraph 状态机执行聊天，支持 Human-in-the-Loop 审批和熔断器保护",
+    response_model=ResponseBase,
+)
+async def chat_with_langgraph(
+    request: Request,
+    agent_request: AgentRequest,
+):
+    """
+    使用 LangGraph 状态机执行聊天（带 Human-in-the-Loop 审批）
+
+    状态机流程：
+    START → analyze → [tool if needed] → approval → [response or END] → memory → END
+
+    当置信度 < 0.7 时会触发人工审批中断。
+
+    Args:
+        request: FastAPI 请求对象
+        agent_request: 聊天请求
+
+    Returns:
+        包含响应内容和会话信息的结果
+    """
+    request_id = request.state.request_id
+    thread_id = agent_request.session_id or str(uuid4())
+
+    logger.info(
+        f"[ChatAPI] POST /langgraph/execute - prompt='{agent_request.prompt}', thread_id='{thread_id}'"
+    )
+
+    try:
+        result = await run_langgraph(agent_request.prompt, thread_id)
+
+        final_response = result.get("final_response", "")
+        total_tokens = result.get("total_tokens", 0)
+        needs_summarization = result.get("needs_summarization", False)
+        needs_approval = result.get("needs_approval", False)
+        pending_approval = result.get("pending_approval", False)
+        confidence = result.get("confidence", 1.0)
+        original_result = result.get("original_result", "")
+
+        logger.info(
+            f"[ChatAPI] LangGraph result: response='{final_response}', confidence={confidence:.2f}, needs_approval={needs_approval}"
+        )
+
+        # 如果有待审批，返回 202 状态
+        if pending_approval:
+            return ResponseBase(
+                code=202,
+                message="需要人工审批",
+                data={
+                    "prompt": agent_request.prompt,
+                    "response": final_response,
+                    "session_id": thread_id,
+                    "confidence": confidence,
+                    "original_result": original_result,
+                },
+                extra={
+                    "needsApproval": True,
+                    "threadId": thread_id,
+                    "confidence": confidence,
+                },
+                request_id=request_id,
+            )
+
+        return ResponseBase(
+            code=200,
+            message="success",
+            data={
+                "prompt": agent_request.prompt,
+                "response": final_response,
+                "session_id": thread_id,
+                "total_tokens": total_tokens,
+                "needs_summarization": needs_summarization,
+                "confidence": confidence,
+            },
+            request_id=request_id,
+        )
+
+    except CircuitBreakerError as e:
+        logger.error(f"[ChatAPI] LangGraph circuit breaker error: {str(e)}")
+        return ResponseBase(
+            code=503,
+            message="服务暂时不可用，请稍后重试",
+            data=None,
+            request_id=request_id,
+            extra={"circuit_state": global_circuit_breaker.state_str},
+        )
+    except Exception as e:
+        logger.error(f"[ChatAPI] LangGraph error: {str(e)}")
+        return ResponseBase(
+            code=500,
+            message=f"执行失败: {str(e)}",
+            data=None,
+            request_id=request_id,
+        )
+
+
+@router.post(
+    "/langgraph/approve",
+    summary="审批 LangGraph 请求",
+    description="对 LangGraph 状态机的待审批请求进行审批",
+    response_model=ResponseBase,
+)
+async def approve_langgraph(
+    request: Request,
+    approval_request: ApprovalRequest,
+):
+    """
+    审批 LangGraph 的待审批请求
+
+    Args:
+        request: FastAPI 请求对象
+        approval_request: 审批请求
+
+    Returns:
+        审批后的执行结果
+    """
+    request_id = request.state.request_id
+    thread_id = approval_request.thread_id
+
+    logger.info(
+        f"[ChatAPI] POST /langgraph/approve - thread_id='{thread_id}', approved={approval_request.approved}"
+    )
+
+    try:
+        result = await update_approval(
+            thread_id,
+            approval_request.approved,
+            approval_request.modified_result,
+        )
+
+        final_response = result.get("final_response", "")
+        total_tokens = result.get("total_tokens", 0)
+
+        logger.info(f"[ChatAPI] LangGraph approve result: response='{final_response}'")
+
+        return ResponseBase(
+            code=200,
+            message="审批成功",
+            data={
+                "thread_id": thread_id,
+                "response": final_response,
+                "total_tokens": total_tokens,
+                "approved": approval_request.approved,
+                "modified_result": approval_request.modified_result,
+            },
+            request_id=request_id,
+        )
+
+    except Exception as e:
+        logger.error(f"[ChatAPI] Week1 approve error: {str(e)}")
+        return ResponseBase(
+            code=500,
+            message=f"审批失败: {str(e)}",
+            data=None,
+            request_id=request_id,
+        )
 
 
 @router.post(
@@ -104,45 +267,6 @@ async def chat_with_agent(
         return ResponseBase(code=500, message=str(e), data=None, request_id=request_id)
 
 
-@router.post(
-    "/message", summary="发送聊天消息", response_model=ResponseBase[ChatMessageResponse]
-)
-async def send_message(
-    fastapi_request: Request,
-    request: ChatMessageRequest,
-    db: AsyncSession = Depends(get_db),
-    redis_client: redis.Redis = Depends(get_redis),
-):
-    request_id = fastapi_request.state.request_id
-    session_id = request.session_id or str(uuid4())
-
-    memory_manager = SessionMemoryManager(db, redis_client)
-
-    # 保存用户消息
-    await memory_manager.add_message(
-        request.user_id, session_id, request.message, "user"
-    )
-
-    # 生成 AI 响应
-    ai_response = ChatMessageResponse(
-        message_id=str(uuid4()),
-        user_id=request.user_id,
-        content=f"AI收到您的消息: {request.message}",
-        role="assistant",
-        session_id=session_id,
-        created_at=datetime.now(),
-    )
-
-    # 保存 AI 响应
-    await memory_manager.add_message(
-        request.user_id, session_id, ai_response.content, "assistant"
-    )
-
-    return ResponseBase(
-        code=200, message="success", data=ai_response, request_id=request_id
-    )
-
-
 @router.get(
     "/history/{session_id}",
     summary="获取聊天历史",
@@ -188,108 +312,18 @@ async def get_chat_history(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post(
-    "/approve",
-    summary="人工审批接口",
-    description="用于审批 LangGraph Human-in-the-Loop 中断的任务",
-    response_model=ResponseBase[ApprovalResponse],
-)
-async def approve_task(
-    request: Request,
-    approval_request: ApprovalRequest,
-):
-    """
-    人工审批接口 - 使用 LangGraph Checkpoint 机制
-
-    当 LangGraph 执行过程中置信度 < 0.7 时，会中断执行等待人工审批。
-
-    新的审批流程：
-    1. 调用此接口提交审批结果
-    2. 接口会更新 checkpoint 状态并恢复图执行
-    3. 返回最终执行结果
-
-    - approved=True: 使用原始结果继续执行
-    - approved=False: 使用修改后的结果继续执行（如果提供了 modified_result）
-
-    Args:
-        request: FastAPI 请求对象
-        approval_request: 审批请求，包含 thread_id, approved, modified_result
-
-    Returns:
-        审批结果信息
-    """
-    request_id = request.state.request_id
-    thread_id = approval_request.thread_id
-
-    build_human_in_loop_graph()
-
-    pending_state = checkpoint_manager.get_pending_state(thread_id)
-
-    if not pending_state:
-        raise HTTPException(
-            status_code=404,
-            detail=f"未找到 thread_id={thread_id} 的待审批任务，或任务已处理",
-        )
-
-    checkpoint_manager.update_approval(
-        thread_id=thread_id,
-        approved=approval_request.approved,
-        modified_result=approval_request.modified_result,
-    )
-
-    result = await checkpoint_manager.resume_and_get_result(thread_id)
-
-    if result:
-        final_message = result.get("messages", [])[-1]
-        response_content = (
-            final_message.content
-            if hasattr(final_message, "content")
-            else str(final_message)
-        )
-        confidence = result.get("confidence", pending_state["confidence"])
-        checkpoint_manager.clear_thread(thread_id)
-        logger.info(f"[ApproveAPI] Thread {thread_id} completed, checkpoint cleared")
-    else:
-        response_content = "[审批后执行出错，checkpoint 保留以便重试]"
-        confidence = pending_state["confidence"]
-        logger.warning(
-            f"[ApproveAPI] Thread {thread_id} resume failed, checkpoint NOT cleared"
-        )
-
-    response = ApprovalResponse(
-        thread_id=thread_id,
-        approved=approval_request.approved,
-        original_result=pending_state["original_result"],
-        modified_result=approval_request.modified_result,
-        confidence=confidence,
-        status="approved" if approval_request.approved else "rejected",
-    )
-
-    logger.info(
-        f"[ApproveAPI] Thread {thread_id} approved={approval_request.approved}, response='{response_content}'"
-    )
-
-    result_base = ResponseBase(
-        code=200, message="审批成功", data=response, request_id=request_id
-    )
-    result_base.extra = {"response": response_content}
-    return result_base
-
-
 @router.get(
-    "/approval/{thread_id}",
-    summary="查询审批状态",
-    description="查询指定线程的审批状态和详情",
+    "/langgraph/approval/{thread_id}",
+    summary="查询 LangGraph 审批状态",
+    description="查询指定线程的 LangGraph 审批状态和详情",
     response_model=ResponseBase[ApprovalResponse],
 )
-async def get_approval_status(
+async def get_langgraph_approval_status_endpoint(
     request: Request,
     thread_id: str,
 ):
     """
-    查询审批状态 - 使用 LangGraph Checkpoint 机制
-
-    通过 checkpoint 获取当前状态来判断审批状态。
+    查询 LangGraph 审批状态
 
     Args:
         request: FastAPI 请求对象
@@ -300,8 +334,7 @@ async def get_approval_status(
     """
     request_id = request.state.request_id
 
-    build_human_in_loop_graph()
-    pending_state = checkpoint_manager.get_pending_state(thread_id)
+    pending_state = await get_approval_status(thread_id)
 
     if not pending_state:
         raise HTTPException(
@@ -309,19 +342,13 @@ async def get_approval_status(
             detail=f"未找到 thread_id={thread_id} 的待审批任务",
         )
 
-    status = "pending"
-    if pending_state["approved"]:
-        status = "approved"
-    elif pending_state.get("modified_result"):
-        status = "rejected"
-
     response = ApprovalResponse(
         thread_id=thread_id,
         approved=pending_state["approved"],
         original_result=pending_state["original_result"],
         modified_result=pending_state.get("modified_result"),
         confidence=pending_state["confidence"],
-        status=status,
+        status=pending_state["status"],
     )
 
     return ResponseBase(
@@ -329,35 +356,18 @@ async def get_approval_status(
     )
 
 
-class SessionHistoryItem(BaseModel):
-    role: str
-    content: str
-    timestamp: str
-
-
-class SessionHistoryResponse(BaseModel):
-    thread_id: str
-    conversation_history: list[SessionHistoryItem]
-    total_tokens: int
-    needs_summarization: bool
-    pending_approval: bool
-    confidence: float
-
-
 @router.get(
-    "/sessions/{thread_id}/history",
-    summary="查询会话历史",
-    description="查询指定线程的会话历史和状态信息",
+    "/langgraph/sessions/{thread_id}/history",
+    summary="查询 LangGraph 会话历史",
+    description="查询指定线程的 LangGraph 会话历史和状态信息",
     response_model=ResponseBase[SessionHistoryResponse],
 )
-async def get_session_history(
+async def get_langgraph_session_history(
     request: Request,
     thread_id: str,
 ):
     """
-    查询会话历史 - 使用 LangGraph Checkpoint 机制
-
-    通过 checkpoint 获取会话历史和状态信息。
+    查询 LangGraph 会话历史
 
     Args:
         request: FastAPI 请求对象
@@ -368,8 +378,7 @@ async def get_session_history(
     """
     request_id = request.state.request_id
 
-    build_human_in_loop_graph()
-    session_info = checkpoint_manager.get_session_info(thread_id)
+    session_info = await get_session_info(thread_id)
 
     history_items = []
     total_tokens = 0
@@ -403,131 +412,6 @@ async def get_session_history(
     return ResponseBase(
         code=200, message="success", data=response, request_id=request_id
     )
-
-
-@router.post(
-    "/langgraph/human-in-loop",
-    summary="使用 Human-in-the-Loop 执行聊天",
-    description="通过 LangGraph 执行聊天，支持人工审批中断",
-    response_model=ResponseBase,
-)
-async def chat_with_human_in_loop(
-    request: Request,
-    agent_request: AgentRequest,
-):
-    """
-    使用 Human-in-the-Loop 机制执行聊天 - LangGraph Checkpoint 版本
-
-    当置信度 < 0.7 时会自动中断，等待人工审批。
-    使用 MemorySaver + interrupt_before 实现状态持久化和中断。
-
-    新的流程：
-    1. 调用此接口启动图执行
-    2. 如果置信度 < 0.7，图会在 approval 节点前中断
-    3. 返回 202 状态，提示需要审批
-    4. 调用 /approve 接口进行审批
-    5. 审批接口会恢复图执行并返回最终结果
-
-    Args:
-        request: FastAPI 请求对象
-        agent_request: 聊天请求
-
-    Returns:
-        包含响应内容和 thread_id 的结果
-    """
-    request_id = request.state.request_id
-    thread_id = agent_request.session_id or str(uuid4())
-
-    logger.info(
-        f"[ChatAPI] POST /langgraph/human-in-loop - prompt='{agent_request.prompt}', thread_id='{thread_id}'"
-    )
-
-    try:
-        graph = build_human_in_loop_graph()
-        config = {"configurable": {"thread_id": thread_id}}
-
-        existing_history = checkpoint_manager.get_conversation_history(thread_id)
-        existing_tokens = 0
-        session_info = checkpoint_manager.get_session_info(thread_id)
-        if session_info:
-            existing_tokens = session_info.get("total_tokens", 0)
-
-        logger.info(
-            f"[ChatAPI] Invoking graph with thread_id='{thread_id}', existing_history_len={len(existing_history)}"
-        )
-        result = await graph.ainvoke(
-            {
-                "messages": [HumanMessage(content=agent_request.prompt)],
-                "conversation_history": existing_history,
-                "total_tokens": existing_tokens,
-            },
-            config,
-        )
-        logger.info(f"[ChatAPI] Graph result: {result}")
-
-        final_message = result.get("messages", [])[-1]
-        response_content = (
-            final_message.content
-            if hasattr(final_message, "content")
-            else str(final_message)
-        )
-
-        confidence = result.get("confidence", 1.0)
-        pending_approval = result.get("pending_approval", False)
-        original_result = result.get("original_result", response_content)
-
-        if pending_approval:
-            response = AgentResponse(
-                prompt=agent_request.prompt,
-                response=f"[等待人工审批] 置信度={confidence:.2f}\n原始结果: {original_result}",
-                timestamp=datetime.now(),
-            )
-            result_base = ResponseBase(
-                code=202,
-                message="需要人工审批",
-                data=response,
-                request_id=request_id,
-            )
-            result_base.extra = {
-                "threadId": thread_id,
-                "confidence": confidence,
-                "needsApproval": True,
-            }
-            logger.info(
-                f"[ChatAPI] Returning 202 (needs approval) - confidence={confidence:.2f}"
-            )
-            return result_base
-
-        response = AgentResponse(
-            prompt=agent_request.prompt,
-            response=response_content,
-            timestamp=datetime.now(),
-        )
-
-        result_base = ResponseBase(
-            code=200,
-            message="success",
-            data=response,
-            request_id=request_id,
-        )
-        result_base.extra = {
-            "threadId": thread_id,
-            "confidence": confidence,
-            "needsApproval": False,
-        }
-        logger.info(
-            f"[ChatAPI] Returning 200 (success) - response='{response_content}'"
-        )
-        return result_base
-
-    except Exception as e:
-        logger.error(f"[ChatAPI] Error: {e}")
-        return ResponseBase(
-            code=500,
-            message=str(e),
-            data=None,
-            request_id=request_id,
-        )
 
 
 @router.get(

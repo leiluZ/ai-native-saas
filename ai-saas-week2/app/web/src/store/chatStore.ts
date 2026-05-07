@@ -97,13 +97,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { agentType, currentThreadId, setCurrentThreadId } = get();
     const endpoint =
       agentType === "langgraph"
-        ? `${API_BASE_URL}/chat/langgraph/human-in-loop`
+        ? `${API_BASE_URL}/chat/langgraph/execute`
         : `${API_BASE_URL}/chat/agent`;
 
-    const requestBody =
-      agentType === "langgraph"
-        ? { prompt: content, session_id: currentThreadId }
-        : { prompt: content };
+    const requestBody = {
+      prompt: content,
+      session_id: currentThreadId,
+    };
 
     try {
       console.log("[ChatStore] Sending request:", {
@@ -195,7 +195,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { setError } = get();
 
     try {
-      const response = await fetch(`${API_BASE_URL}/chat/approve`, {
+      const response = await fetch(`${API_BASE_URL}/chat/langgraph/approve`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -214,9 +214,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const data = await response.json();
 
       if (data.code === 200) {
-        const finalResult = approved
-          ? data.data.original_result
-          : data.data.modified_result || modifiedResult;
+        const finalResult =
+          data.data.response || data.data.original_result || "";
 
         set((state) => ({
           messages: state.messages.map((msg) =>
