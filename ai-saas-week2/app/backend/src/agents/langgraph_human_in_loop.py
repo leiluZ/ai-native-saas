@@ -2,13 +2,15 @@
 LangGraph Human-in-the-Loop 机制 - Day 2
 
 本模块展示如何在 LangGraph 中实现 Human-in-the-Loop：
-- ApprovalNode: 当置信度 < 0.7 时返回 Command(goto=END) 暂停图执行
+- ApprovalNode: 当置信度 < 0.7 时返回状态暂停图执行
 - MemorySaver: 状态持久化
-- Command(goto=END): LangGraph 原生的暂停/恢复机制
+- 条件边实现中断/恢复机制
 - /api/v1/chat/approve: 审批接口
+- CircuitBreaker: 容错降级机制
 """
 
 import logging
+import asyncio
 from datetime import datetime
 from typing import TypedDict, Annotated, Sequence, Literal, Optional, Dict, Any
 from langgraph.graph import StateGraph, END, START
@@ -16,6 +18,8 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langgraph.checkpoint.memory import MemorySaver
 import operator
 import re
+
+from app.utils.circuit_breaker import global_circuit_breaker, CircuitBreakerError
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,7 @@ class AgentState(TypedDict):
     original_result: Optional[str]
     conversation_history: list[dict]
     total_tokens: int
+    is_fallback: bool
 
 
 def calculate_confidence(result: str, tool_name: str) -> float:
@@ -163,9 +168,9 @@ def router_node(state: AgentState) -> AgentState:
     }
 
 
-def executor_node(state: AgentState) -> AgentState:
+async def executor_node(state: AgentState) -> AgentState:
     """
-    执行器节点 - 执行路由决定的工具
+    执行器节点 - 执行路由决定的工具（带熔断器保护）
 
     Args:
         state: 当前状态
@@ -181,40 +186,69 @@ def executor_node(state: AgentState) -> AgentState:
     messages = state.get("messages", [])
 
     result_message = ""
+    is_fallback = False
 
-    if route == "general":
-        response = f"我收到了你的消息: {messages[-1].content if messages else '无内容'}"
-        result_message = response
-    elif tool_name and tool_registry.has_tool(tool_name):
-        try:
-            result = tool_registry.invoke_tool(
-                tool_name,
-                (
-                    {"expression": tool_input}
-                    if route == "calc"
-                    else (
-                        {"location": tool_input}
-                        if route == "weather"
-                        else {"timezone": tool_input}
-                    )
-                ),
+    try:
+        if route == "general":
+            response = (
+                f"我收到了你的消息: {messages[-1].content if messages else '无内容'}"
+            )
+            result_message = response
+        elif tool_name and tool_registry.has_tool(tool_name):
+            # 使用熔断器保护工具调用
+            async def invoke_tool_with_timeout():
+                return await asyncio.to_thread(
+                    tool_registry.invoke_tool,
+                    tool_name,
+                    (
+                        {"expression": tool_input}
+                        if route == "calc"
+                        else (
+                            {"location": tool_input}
+                            if route == "weather"
+                            else {"timezone": tool_input}
+                        )
+                    ),
+                )
+
+            result = await global_circuit_breaker.call(
+                invoke_tool_with_timeout,
+                timeout=30,
+                max_retries=4,
             )
             result_message = result
-        except Exception as e:
-            result_message = f"执行错误: {str(e)}"
-    else:
-        result_message = f"未找到工具: {tool_name}"
+        else:
+            result_message = f"未找到工具: {tool_name}"
+
+    except CircuitBreakerError:
+        logger.error("[ExecutorNode] CircuitBreaker is OPEN, triggering fallback")
+        is_fallback = True
+        return {
+            "messages": [AIMessage(content="抱歉，服务暂时繁忙，请稍后再试")],
+            "confidence": 0.0,
+            "original_result": "服务熔断",
+            "is_fallback": True,
+            "pending_approval": False,
+            "needs_approval": False,
+        }
+    except asyncio.TimeoutError:
+        logger.error("[ExecutorNode] Tool invocation timeout after retries")
+        result_message = "工具调用超时"
+    except Exception as e:
+        logger.error(f"[ExecutorNode] Unexpected error: {str(e)}", exc_info=True)
+        result_message = f"执行错误: {str(e)}"
 
     confidence = calculate_confidence(result_message, tool_name)
 
     logger.info(
-        f"[ExecutorNode] route='{route}', tool_name='{tool_name}', tool_input='{tool_input}' -> result='{result_message}', confidence={confidence:.2f}"
+        f"[ExecutorNode] route='{route}', tool_name='{tool_name}', tool_input='{tool_input}' -> result='{result_message}', confidence={confidence:.2f}, is_fallback={is_fallback}"
     )
 
     return {
         "messages": [AIMessage(content=result_message)],
         "confidence": confidence,
         "original_result": result_message,
+        "is_fallback": is_fallback,
     }
 
 
@@ -291,7 +325,7 @@ def reviewer_node(state: AgentState) -> AgentState:
     if approved and modified_result:
         final_result = modified_result
     else:
-        final_result = original_result
+        final_result = original_result or "无响应"
 
     if approved:
         logger.info(f"[ReviewerNode] User approved, final_result='{final_result}'")
@@ -395,6 +429,28 @@ def memory_node(state: AgentState) -> AgentState:
             }
 
     return {"conversation_history": conversation_history, "total_tokens": total_tokens}
+
+
+def fallback_node(state: AgentState) -> AgentState:
+    """
+    降级节点 - 当熔断器打开时返回友好提示
+
+    Args:
+        state: 当前状态
+
+    Returns:
+        更新后的状态，包含降级响应
+    """
+    logger.warning("[FallbackNode] Circuit is OPEN, returning fallback response")
+
+    return {
+        "messages": [AIMessage(content="抱歉，服务暂时繁忙，请稍后再试")],
+        "pending_approval": False,
+        "needs_approval": False,
+        "approved": False,
+        "confidence": 0.0,
+        "is_fallback": True,
+    }
 
 
 def route_decision(state: AgentState) -> Literal["executor", "reviewer"]:
