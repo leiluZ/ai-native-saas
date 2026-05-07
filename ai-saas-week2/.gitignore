@@ -12,3 +12,5 @@ __pycache__/
 venv/
 *.js
 !*.config.js
+playwright-report/
+test-results/

@@ -7,7 +7,7 @@ from sqlalchemy import update
 import redis.asyncio as redis
 from datetime import datetime
 from uuid import uuid4
-from app.models.chat import ChatMessage, ChatSession
+from src.models.chat import ChatMessage, ChatSession
 
 # Token 估算常量（基于经验值）
 TOKEN_THRESHOLD = 8000

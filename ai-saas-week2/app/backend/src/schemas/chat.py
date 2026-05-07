@@ -60,3 +60,22 @@ class ApprovalResponse(BaseModel):
     modified_result: Optional[str] = Field(None, description="修改后的结果")
     confidence: float = Field(..., description="置信度")
     status: str = Field(..., description="审批状态: pending/approved/rejected")
+
+
+class SessionHistoryItem(BaseModel):
+    """会话历史项"""
+
+    role: str = Field(..., description="角色: user/assistant")
+    content: str = Field(..., description="消息内容")
+    timestamp: Optional[datetime] = Field(None, description="时间戳")
+
+
+class SessionHistoryResponse(BaseModel):
+    """LangGraph 会话历史响应模型"""
+
+    thread_id: str = Field(..., description="线程ID")
+    conversation_history: List[SessionHistoryItem] = Field(..., description="对话历史")
+    total_tokens: int = Field(..., description="总 token 数")
+    needs_summarization: bool = Field(..., description="是否需要摘要")
+    pending_approval: bool = Field(..., description="是否有待审批")
+    confidence: float = Field(..., description="置信度")

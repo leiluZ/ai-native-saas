@@ -19,7 +19,7 @@ from langgraph.checkpoint.memory import MemorySaver
 import operator
 import re
 
-from app.utils.circuit_breaker import global_circuit_breaker, CircuitBreakerError
+from src.utils.circuit_breaker import global_circuit_breaker, CircuitBreakerError
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +178,7 @@ async def executor_node(state: AgentState) -> AgentState:
     Returns:
         更新后的状态
     """
-    from app.agents.tool_registry import tool_registry
+    from .tool_registry import tool_registry
 
     route = state.get("route", "general")
     tool_name = state.get("tool_name", "")

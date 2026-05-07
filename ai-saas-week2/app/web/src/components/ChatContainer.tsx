@@ -99,11 +99,14 @@ export const ChatContainer: React.FC = () => {
   const fetchSessionHistory = async () => {
     setHistoryLoading(true);
     try {
-      const response = await fetch(
-        `${
-          import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
-        }/chat/sessions/${currentThreadId}/history`,
-      );
+      const baseUrl =
+        import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
+      const endpoint =
+        agentType === "langgraph"
+          ? `${baseUrl}/chat/langgraph/sessions/${currentThreadId}/history`
+          : `${baseUrl}/chat/history/${currentThreadId}`;
+
+      const response = await fetch(endpoint);
       if (response.ok) {
         const data = await response.json();
         setHistoryData(data.data);
