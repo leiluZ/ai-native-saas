@@ -95,7 +95,7 @@ jobs:
         run: |
           if [ -d "ai-saas-week1/app/backend/tests/" ]; then
             cd ai-saas-week1/app/backend
-            PYTHONPATH=src pytest tests/test_llm_client.py \
+            PYTHONPATH=. pytest tests/test_llm_client.py \
                    tests/test_tool_registry.py \
                    tests/test_memory_manager.py \
                    tests/test_agent_router.py \
@@ -134,7 +134,7 @@ jobs:
         run: |
           if [ -d "ai-saas-week2/app/backend/tests/" ]; then
             cd ai-saas-week2/app/backend
-            PYTHONPATH=src pytest tests/test_llm_client.py \
+            PYTHONPATH=. pytest tests/test_llm_client.py \
                    tests/test_tool_registry.py \
                    tests/test_memory_manager.py \
                    tests/test_agent_router.py \

@@ -1,6 +1,6 @@
 """Human-in-the-Loop 测试"""
 
-from app.agents.langgraph_human_in_loop import (
+from src.agents.langgraph_human_in_loop import (
     HumanInLoopManager,
     calculate_confidence,
     router_node,
