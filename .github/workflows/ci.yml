@@ -239,7 +239,11 @@ jobs:
 
       - name: Install Docker Compose
         run: |
-          pip install docker-compose
+          DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
+          mkdir -p $DOCKER_CONFIG/cli-plugins
+          curl -SL https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
+          chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
+          docker compose version
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -260,7 +264,7 @@ jobs:
         run: |
           if [ -f "ai-saas-week1/docker-compose.yml" ]; then
             cd ai-saas-week1
-            docker-compose up -d
+            docker compose up -d
             sleep 10
           fi
 
@@ -295,7 +299,11 @@ jobs:
 
       - name: Install Docker Compose
         run: |
-          pip install docker-compose
+          DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
+          mkdir -p $DOCKER_CONFIG/cli-plugins
+          curl -SL https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
+          chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
+          docker compose version
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -316,7 +324,7 @@ jobs:
         run: |
           if [ -f "ai-saas-week2/docker-compose.yml" ]; then
             cd ai-saas-week2
-            docker-compose up -d
+            docker compose up -d
             sleep 10
           fi
 
