@@ -264,6 +264,7 @@ jobs:
         run: |
           if [ -f "ai-saas-week1/docker-compose.yml" ]; then
             cd ai-saas-week1
+            cp .env.example .env
             docker compose up -d
             sleep 10
           fi
@@ -324,6 +325,7 @@ jobs:
         run: |
           if [ -f "ai-saas-week2/docker-compose.yml" ]; then
             cd ai-saas-week2
+            cp .env.example .env
             docker compose up -d
             sleep 10
           fi
