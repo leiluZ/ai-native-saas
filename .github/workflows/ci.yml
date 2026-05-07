@@ -95,7 +95,7 @@ jobs:
         run: |
           if [ -d "ai-saas-week1/app/backend/tests/" ]; then
             cd ai-saas-week1/app/backend
-            PYTHONPATH=. pytest tests/test_llm_client.py \
+            PYTHONPATH=src pytest tests/test_llm_client.py \
                    tests/test_tool_registry.py \
                    tests/test_memory_manager.py \
                    tests/test_agent_router.py \
@@ -134,7 +134,7 @@ jobs:
         run: |
           if [ -d "ai-saas-week2/app/backend/tests/" ]; then
             cd ai-saas-week2/app/backend
-            PYTHONPATH=. pytest tests/test_llm_client.py \
+            PYTHONPATH=src pytest tests/test_llm_client.py \
                    tests/test_tool_registry.py \
                    tests/test_memory_manager.py \
                    tests/test_agent_router.py \
@@ -167,7 +167,7 @@ jobs:
             cd ai-saas-week1/app/web
             npm ci
             if grep -q '"test"' package.json; then
-              npm test -- --coverage --watchAll=false
+              npm test
             else
               echo "No test script found, skipping..."
             fi
@@ -193,7 +193,7 @@ jobs:
             cd ai-saas-week2/app/web
             npm ci
             if grep -q '"test"' package.json; then
-              npm test -- --coverage --watchAll=false
+              npm test
             else
               echo "No test script found, skipping..."
             fi
@@ -207,6 +207,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Docker Compose
+        run: |
+          sudo apt-get update && sudo apt-get install -y docker-compose-plugin
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -256,6 +263,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Docker Compose
+        run: |
+          sudo apt-get update && sudo apt-get install -y docker-compose-plugin
 
       - name: Set up Node
         uses: actions/setup-node@v4
