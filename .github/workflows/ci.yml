@@ -89,10 +89,172 @@ jobs:
           files: ai-saas-week3/app/backend/coverage.xml
           flags: backend-week3
 
+  rag-tests-week3:
+    name: RAG Pipeline Tests (Week3)
+    runs-on: ubuntu-latest
+    needs: backend-tests-week3
+    if: always() && needs.backend-tests-week3.result == 'success'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-asyncio pytest-mock
+          if [ -f "ai-saas-week3/app/backend/requirements.txt" ]; then
+            pip install -r ai-saas-week3/app/backend/requirements.txt
+          fi
+
+      - name: Run RAG tests
+        run: |
+          if [ -d "ai-saas-week3/app/backend/tests/" ]; then
+            cd ai-saas-week3/app/backend
+            PYTHONPATH=. pytest tests/ -v -k "rag" --cov=src/rag/ --cov-report=xml
+          fi
+
+      - name: Run document parser test script
+        run: |
+          cd ai-saas-week3/app/backend
+          PYTHONPATH=. python scripts/test_document_parser.py
+
+  frontend-lint-week3:
+    name: Frontend Lint (Week3)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'ai-saas-week3/app/web/package-lock.json'
+
+      - name: Install frontend dependencies
+        run: |
+          cd ai-saas-week3/app/web
+          npm ci
+
+      - name: Run ESLint
+        run: |
+          cd ai-saas-week3/app/web
+          npm run lint
+
+  frontend-build-week3:
+    name: Frontend Build (Week3)
+    runs-on: ubuntu-latest
+    needs: frontend-lint-week3
+    if: always() && needs.frontend-lint-week3.result == 'success'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'ai-saas-week3/app/web/package-lock.json'
+
+      - name: Install frontend dependencies
+        run: |
+          cd ai-saas-week3/app/web
+          npm ci
+
+      - name: Build frontend
+        run: |
+          cd ai-saas-week3/app/web
+          npm run build
+
+  frontend-e2e-week3:
+    name: Frontend E2E Tests (Week3)
+    runs-on: ubuntu-latest
+    needs: frontend-build-week3
+    if: always() && needs.frontend-build-week3.result == 'success'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'ai-saas-week3/app/web/package-lock.json'
+
+      - name: Install frontend dependencies
+        run: |
+          cd ai-saas-week3/app/web
+          npm ci
+
+      - name: Install Playwright
+        run: |
+          cd ai-saas-week3/app/web
+          npx playwright install --with-deps
+
+      - name: Run E2E tests
+        run: |
+          cd ai-saas-week3/app/web
+          npm run test:e2e
+
+  rag-integration-week3:
+    name: RAG Integration Tests (Week3)
+    runs-on: ubuntu-latest
+    needs: [backend-tests-week3, frontend-build-week3]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Start services with Docker Compose
+        run: |
+          cd ai-saas-week3
+          docker-compose up -d
+          sleep 10
+
+      - name: Check service health
+        run: |
+          curl -s http://localhost:8000/api/v1/rag/health || exit 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install frontend dependencies
+        run: |
+          cd ai-saas-week3/app/web
+          npm ci
+
+      - name: Install Playwright
+        run: |
+          cd ai-saas-week3/app/web
+          npx playwright install --with-deps
+
+      - name: Run RAG integration tests
+        run: |
+          cd ai-saas-week3/app/web
+          npx playwright test --grep "@rag"
+
+      - name: Stop services
+        if: always()
+        run: |
+          cd ai-saas-week3
+          docker-compose down
+
   docker-build-week3:
     name: Docker Build (Week3)
     runs-on: ubuntu-latest
-    needs: backend-tests-week3
+    needs: [backend-tests-week3, frontend-build-week3, rag-integration-week3]
     if: github.event_name == 'push' && always()
     steps:
       - name: Checkout code
