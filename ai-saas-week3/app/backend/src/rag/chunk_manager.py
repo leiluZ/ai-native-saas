@@ -1,3 +1,4 @@
+import logging
 import hashlib
 from typing import List, Dict, Any, Optional, Literal
 from pathlib import Path
@@ -6,6 +7,8 @@ import json
 import tiktoken
 
 from .schemas import ChunkResult
+
+logger = logging.getLogger(__name__)
 
 
 class ChunkManager:
@@ -24,11 +27,18 @@ class ChunkManager:
     ) -> List[ChunkResult]:
         """分块文档"""
         if not content or not content.strip():
+            logger.warning("[ChunkManager] Empty content received")
             return []
 
         actual_chunk_size = chunk_size or self.chunk_size
         actual_overlap = overlap_ratio or self.overlap_ratio
         overlap_tokens = int(actual_chunk_size * actual_overlap)
+        total_tokens = self._count_tokens(content)
+
+        logger.info(
+            f"[ChunkManager] Starting chunking - content_tokens={total_tokens}, strategy='{strategy}', "
+            f"chunk_size={actual_chunk_size}, overlap_ratio={actual_overlap:.2f}, overlap_tokens={overlap_tokens}"
+        )
 
         if strategy == "fixed":
             chunks = self._chunk_fixed(content, actual_chunk_size, overlap_tokens)
@@ -39,13 +49,22 @@ class ChunkManager:
         else:
             chunks = self._chunk_recursive(content, actual_chunk_size, overlap_tokens)
 
+        logger.info(
+            f"[ChunkManager] Raw chunks generated - count={len(chunks)}, now deduplicating..."
+        )
+
         results = []
         seen_hashes = set()
+        deduplicated_count = 0
 
         for i, chunk in enumerate(chunks):
             chunk_hash = self._compute_hash(chunk)
 
             if chunk_hash in seen_hashes:
+                deduplicated_count += 1
+                logger.debug(
+                    f"[ChunkManager] Deduplicated chunk - index={i}, hash='{chunk_hash[:16]}'"
+                )
                 continue
             seen_hashes.add(chunk_hash)
 
@@ -71,6 +90,11 @@ class ChunkManager:
                     token_count=self._count_tokens(chunk),
                 )
             )
+
+        logger.info(
+            f"[ChunkManager] Chunking complete - total_chunks={len(results)}, deduplicated={deduplicated_count}, "
+            f"total_tokens_output={sum(c.token_count for c in results)}"
+        )
 
         return results
 

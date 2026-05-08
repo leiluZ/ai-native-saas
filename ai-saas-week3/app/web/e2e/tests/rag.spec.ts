@@ -50,4 +50,30 @@ test.describe("RAG Pipeline - Week3", () => {
     const fileName = page.locator("text=test-document.txt");
     await expect(fileName).toBeVisible({ timeout: 5000 });
   });
+
+  test("should execute RAG pipeline with uploaded file", async ({ page }) => {
+    // 上传文件
+    const fileInput = page.locator("#file-upload");
+    const testFilePath = join(__dirname, "../fixtures/test-document.txt");
+    await fileInput.setInputFiles(testFilePath);
+
+    // 等待文件名显示
+    await page.locator("text=test-document.txt").waitFor();
+
+    // 点击执行按钮
+    const executeButton = page.locator(
+      'button:has-text("Execute RAG Pipeline")',
+    );
+    await executeButton.click();
+
+    // 等待加载完成（按钮不再禁用）
+    await page.waitForSelector(
+      'button:has-text("Execute RAG Pipeline"):not([disabled])',
+      { timeout: 15000 },
+    );
+
+    // 验证成功结果显示
+    const successCount = page.locator("div.bg-green-50 span.text-green-600");
+    await expect(successCount).toBeVisible({ timeout: 5000 });
+  });
 });
