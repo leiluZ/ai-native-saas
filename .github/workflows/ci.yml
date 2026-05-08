@@ -148,12 +148,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: 'ai-saas-week3/app/web/package-lock.json'
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r ai-saas-week3/app/backend/requirements.txt -q
 
       - name: Install frontend dependencies
         run: |
@@ -165,10 +175,28 @@ jobs:
           cd ai-saas-week3/app/web
           npx playwright install --with-deps
 
+      - name: Start backend service
+        run: |
+          cd ai-saas-week3/app/backend
+          PYTHONPATH=. uvicorn src.main:app --host 0.0.0.0 --port 8000 &
+          echo "Waiting for backend to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8000/api/v1/health/ > /dev/null 2>&1; then
+              echo "Backend is ready!"
+              break
+            fi
+            sleep 1
+          done
+
       - name: Run E2E tests
         run: |
           cd ai-saas-week3/app/web
           npm run test:e2e
+
+      - name: Stop backend service
+        if: always()
+        run: |
+          pkill -f "uvicorn src.main:app" || true
 
   docker-build-week3:
     name: Docker Build (Week3)

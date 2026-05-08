@@ -1,0 +1,9 @@
+This is a test document for RAG pipeline testing.
+It contains some sample text that should be parsed and chunked.
+
+The RAG pipeline should be able to:
+1. Parse this document
+2. Split it into chunks
+3. Return metadata about the parsing
+
+This file is used for end-to-end testing of the document upload functionality.
