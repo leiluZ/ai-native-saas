@@ -59,8 +59,8 @@ def calculate_confidence(result: str, tool_name: str) -> float:
     基于以下规则计算置信度：
     - 结果非空: +0.3
     - 无错误关键词: +0.3
-    - 结果格式正确: +0.2
-    - 工具执行成功: +0.2
+    - 结果格式正确（匹配工具预期格式）: +0.2
+    - 基础分: +0.2（仅当格式正确时）
 
     Args:
         result: 工具执行结果
@@ -78,17 +78,24 @@ def calculate_confidence(result: str, tool_name: str) -> float:
     if not any(keyword in result.lower() for keyword in error_keywords):
         confidence += 0.3
 
+    # 检查格式是否匹配工具预期
+    format_ok = False
     if tool_name == "get_weather":
-        if any(unit in result for unit in ["°C", "°F", "℃", "温度"]):
-            confidence += 0.2
+        if any(unit in result for unit in ["°C", "°F", "℃", "温度", "weather", "天气"]):
+            format_ok = True
     elif tool_name == "get_current_time":
-        if any(unit in result for unit in [":", "时", "分", "AM", "PM"]):
-            confidence += 0.2
+        if any(unit in result for unit in [":", "时", "分", "AM", "PM", "时间", "time"]):
+            format_ok = True
     elif tool_name == "calculate":
         if re.search(r"[\d]", result):
-            confidence += 0.2
+            format_ok = True
+    elif tool_name:
+        # 对于未指定的工具，如果结果非空且无错误，认为格式OK
+        format_ok = True
 
-    confidence += 0.2
+    if format_ok:
+        confidence += 0.2
+        confidence += 0.2  # 基础分
 
     return min(confidence, 1.0)
 

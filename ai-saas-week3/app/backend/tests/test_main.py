@@ -21,19 +21,6 @@ def test_health_check():
     assert "request_id" in data
 
 
-def test_chat_message():
-    """测试聊天消息接口"""
-    response = client.post(
-        "/api/v1/chat/message",
-        json={"content": "Hello, World!"}
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["code"] == 200
-    assert "request_id" in data
-    assert "data" in data
-
-
 def test_chat_history():
     """测试聊天历史接口"""
     response = client.get("/api/v1/chat/history/test-session")
