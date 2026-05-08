@@ -61,6 +61,12 @@ def _record_trace(thread_id: str, node: str, state: dict):
         "timestamp": datetime.now().isoformat(),
     }
     _execution_traces[thread_id].append(trace_entry)
+
+    # 限制每个 thread 的最大轨迹数（最多保留 1000 条）
+    max_traces = 1000
+    if len(_execution_traces[thread_id]) > max_traces:
+        _execution_traces[thread_id] = _execution_traces[thread_id][-max_traces:]
+
     logger.info(
         f"[Trace] thread={thread_id}, node={node}, trace_count={len(_execution_traces[thread_id])}"
     )
@@ -642,8 +648,8 @@ async def run_langgraph(user_input: str, thread_id: str = "default") -> dict:
     graph = get_langgraph_graph()
     config = {"configurable": {"thread_id": thread_id}}
 
-    # 清除旧轨迹
-    clear_execution_trace(thread_id)
+    # 保留历史轨迹，不清除
+    # 这样可以累积同一个 thread_id 的所有执行轨迹
 
     initial_state = {
         "messages": [HumanMessage(content=user_input)],
