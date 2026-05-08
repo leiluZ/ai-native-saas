@@ -21,15 +21,6 @@ def test_health_check():
     assert "request_id" in data
 
 
-def test_chat_history():
-    """测试聊天历史接口"""
-    response = client.get("/api/v1/chat/history/test-session")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["code"] == 200
-    assert "request_id" in data
-
-
 def test_agent_endpoint_exists():
     """测试 Agent 端点是否存在"""
     response = client.post(

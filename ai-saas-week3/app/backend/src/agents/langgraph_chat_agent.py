@@ -414,8 +414,8 @@ async def response_node(state: AgentState) -> AgentState:
         final_response = (
             f"[等待人工审批] 置信度={confidence:.2f} 原始结果: {original_result}"
         )
-    elif needs_tool and tool_result:
-        # 直接返回工具结果，不调用 LLM
+    elif tool_result:
+        # 如果有工具结果，直接返回工具结果，不调用 LLM
         final_response = tool_result
     else:
         # 直接调用 LLM 生成响应
