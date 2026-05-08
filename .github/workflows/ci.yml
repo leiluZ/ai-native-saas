@@ -79,7 +79,7 @@ jobs:
         run: |
           if [ -d "ai-saas-week3/app/backend/tests/" ]; then
             cd ai-saas-week3/app/backend
-            PYTHONPATH=. pytest tests/ -v
+            PYTHONPATH=. pytest tests/ --ignore=tests/fixtures -v
           fi
 
       - name: Run document parser test
