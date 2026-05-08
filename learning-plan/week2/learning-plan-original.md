@@ -181,7 +181,7 @@
 ```md
 实现 LangGraph 可视化和并发测试。要求：
 - 使用 langgraph-cli 创建可视化界面
-- 实现 /api/v1/agent/{thread_id}/history 接口，返回执行轨迹
+- 实现 /api/v1/langgraph/{thread_id}/trace 接口，返回执行轨迹
 - 轨迹格式：[{node: "analyze", state: {...}, timestamp: "..."}, ...]
 - 生成 Mermaid 序列图展示执行流程
 - 编写并发测试：使用 asyncio + aiohttp 发起 100 并发请求
