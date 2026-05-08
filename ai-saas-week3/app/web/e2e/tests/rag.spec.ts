@@ -1,5 +1,9 @@
 import { test, expect } from "@playwright/test";
-import path from "path";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 test.describe("RAG Pipeline - Week3", () => {
   test.beforeEach(async ({ page }) => {
@@ -40,7 +44,7 @@ test.describe("RAG Pipeline - Week3", () => {
     const fileInput = page.locator("#file-upload");
     await expect(fileInput).toBeAttached();
 
-    const testFilePath = path.join(__dirname, "../fixtures/test-document.txt");
+    const testFilePath = join(__dirname, "../fixtures/test-document.txt");
     await fileInput.setInputFiles(testFilePath);
 
     const fileName = page.locator("text=test-document.txt");
