@@ -1,3 +1,4 @@
+import asyncio
 import json
 import mimetypes
 from typing import List
@@ -20,6 +21,26 @@ class DocumentParser:
 
     def __init__(self):
         self.error_log: List[ParseError] = []
+
+    async def parse_files(self, file_paths: List[str]) -> dict:
+        tasks = [self.parse_file(f) for f in file_paths]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        success = []
+        errors = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                errors.append(
+                    ParseError(
+                        file_path=file_paths[i],
+                        error=str(result),
+                        timestamp=datetime.now().isoformat(),
+                    )
+                )
+            else:
+                success.append(result.model_dump())
+
+        return {"success": success, "errors": errors}
 
     async def parse_file(self, file_path: str) -> ParsedDocument:
         mime_type, _ = mimetypes.guess_type(file_path)

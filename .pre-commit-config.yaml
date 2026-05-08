@@ -74,3 +74,11 @@ repos:
         pass_filenames: false
         files: ^ai-saas-week\d+/packages/shared/
         stages: [pre-push]
+
+      - id: local-ci-test
+        name: local CI/CD test
+        entry: bash scripts/run-ci-local.sh
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        always_run: true

@@ -1,13 +1,12 @@
 from typing import Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class ParsedDocument(BaseModel):
     content: str = Field(..., description="清洗后的文档内容")
     metadata: Dict[str, Any] = Field(..., description="文档元数据")
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 
 class ChunkResult(BaseModel):
