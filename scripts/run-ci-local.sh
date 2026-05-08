@@ -86,7 +86,7 @@ for WEEK_DIR in $CHANGED_WEEKS; do
         # Run RAG-specific pytest tests if any exist
         RAG_TEST_COUNT=$($PYTHON_CMD -m pytest tests/ -v -k "rag" --collect-only 2>/dev/null | grep -c "<Function" || echo "0")
         if [ "$RAG_TEST_COUNT" -gt 0 ] 2>/dev/null; then
-            PYTHONPATH=. $PYTHON_CMD -m pytest tests/ -v -k "rag" --cov=src/rag/ --cov-report=xml || { echo "RAG pytest tests failed"; exit 1; }
+            PYTHONPATH=. $PYTHON_CMD -m pytest tests/ -v -k "rag" || { echo "RAG pytest tests failed"; exit 1; }
             echo "✓ $WEEK_DIR RAG pytest tests passed"
             RAG_TESTS_PASSED=true
         else

@@ -218,7 +218,7 @@ jobs:
       - name: Start services with Docker Compose
         run: |
           cd ai-saas-week3
-          docker-compose up -d
+          docker compose up -d
           sleep 10
 
       - name: Check service health
@@ -249,7 +249,7 @@ jobs:
         if: always()
         run: |
           cd ai-saas-week3
-          docker-compose down
+          docker compose down
 
   docker-build-week3:
     name: Docker Build (Week3)
