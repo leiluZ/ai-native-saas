@@ -73,7 +73,8 @@ test.describe("RAG Pipeline - Week3", () => {
     );
 
     // 验证成功结果显示
-    const successCount = page.locator("div.bg-green-50 span.text-green-600");
+    const successCount = page.locator("div.bg-green-50 div.text-green-600");
     await expect(successCount).toBeVisible({ timeout: 5000 });
+    await expect(page.locator("text=Success")).toBeVisible();
   });
 });
