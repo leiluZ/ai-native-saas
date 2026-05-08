@@ -25,6 +25,8 @@ from src.agents.langgraph_chat_agent import (
     update_approval,
     get_approval_status,
     get_session_info,
+    get_execution_trace,
+    generate_mermaid_sequence,
 )
 from src.utils.session_memory import SessionMemoryManager
 from src.utils.circuit_breaker import global_circuit_breaker, CircuitBreakerError
@@ -462,4 +464,63 @@ async def reset_circuit(request: Request):
         message="熔断器已重置",
         data={"state": "CLOSED"},
         request_id=request_id,
+    )
+
+
+@router.get(
+    "/langgraph/sessions/{thread_id}/trace",
+    summary="获取 LangGraph 执行轨迹",
+    description="获取指定线程的 LangGraph 执行轨迹，用于可视化展示",
+    response_model=ResponseBase,
+)
+async def get_langgraph_execution_trace(
+    request: Request,
+    thread_id: str,
+):
+    """
+    获取 LangGraph 执行轨迹
+
+    轨迹格式: [{node: "analyze", state: {...}, timestamp: "..."}, ...]
+
+    Args:
+        request: FastAPI 请求对象
+        thread_id: 线程ID
+
+    Returns:
+        执行轨迹列表
+    """
+    request_id = request.state.request_id
+
+    trace = get_execution_trace(thread_id)
+
+    return ResponseBase(code=200, message="success", data=trace, request_id=request_id)
+
+
+@router.get(
+    "/langgraph/sessions/{thread_id}/mermaid",
+    summary="获取 Mermaid 序列图",
+    description="根据执行轨迹生成 Mermaid 序列图，用于可视化展示执行流程",
+    response_model=ResponseBase,
+)
+async def get_langgraph_mermaid(
+    request: Request,
+    thread_id: str,
+):
+    """
+    获取 Mermaid 序列图
+
+    Args:
+        request: FastAPI 请求对象
+        thread_id: 线程ID
+
+    Returns:
+        Mermaid 序列图文本
+    """
+    request_id = request.state.request_id
+
+    trace = get_execution_trace(thread_id)
+    mermaid_code = generate_mermaid_sequence(trace)
+
+    return ResponseBase(
+        code=200, message="success", data=mermaid_code, request_id=request_id
     )

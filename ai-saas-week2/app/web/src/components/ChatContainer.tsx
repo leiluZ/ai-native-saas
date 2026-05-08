@@ -1,8 +1,17 @@
 import React, { useEffect, useRef, useState } from "react";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
+import { LangGraphPanel } from "./LangGraphPanel";
 import { useChatStore } from "../store/chatStore";
-import { Moon, Sun, Trash2, RefreshCw, History, X } from "lucide-react";
+import {
+  Moon,
+  Sun,
+  Trash2,
+  RefreshCw,
+  History,
+  X,
+  GitBranch,
+} from "lucide-react";
 
 export const ChatContainer: React.FC = () => {
   const {
@@ -22,6 +31,7 @@ export const ChatContainer: React.FC = () => {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [circuitStatus, setCircuitStatus] = useState<any>({ state: "CLOSED" });
   const [circuitLoading, setCircuitLoading] = useState(false);
+  const [showLangGraphPanel, setShowLangGraphPanel] = useState(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -171,6 +181,15 @@ export const ChatContainer: React.FC = () => {
             >
               <History className="w-5 h-5" />
             </button>
+            {agentType === "langgraph" && (
+              <button
+                onClick={() => setShowLangGraphPanel(true)}
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors"
+                title="查看 LangGraph 执行轨迹"
+              >
+                <GitBranch className="w-5 h-5" />
+              </button>
+            )}
             <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-lg px-3 py-1">
               <div
                 className={`w-2 h-2 rounded-full ${getCircuitColor()} ${
@@ -255,6 +274,13 @@ export const ChatContainer: React.FC = () => {
       </main>
 
       <ChatInput />
+
+      {showLangGraphPanel && (
+        <LangGraphPanel
+          threadId={currentThreadId}
+          onClose={() => setShowLangGraphPanel(false)}
+        />
+      )}
 
       {showHistory && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
