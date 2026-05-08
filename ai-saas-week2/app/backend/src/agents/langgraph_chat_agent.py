@@ -39,6 +39,9 @@ logger = logging.getLogger(__name__)
 # 全局 checkpointer
 _global_checkpointer = None
 
+# 全局执行轨迹存储: {thread_id: [{node, state, timestamp}, ...]}
+_execution_traces: Dict[str, list] = {}
+
 
 def _get_checkpointer():
     """获取全局 checkpointer 实例"""
@@ -46,6 +49,109 @@ def _get_checkpointer():
     if _global_checkpointer is None:
         _global_checkpointer = MemorySaver()
     return _global_checkpointer
+
+
+def _record_trace(thread_id: str, node: str, state: dict):
+    """记录节点执行轨迹"""
+    if thread_id not in _execution_traces:
+        _execution_traces[thread_id] = []
+    trace_entry = {
+        "node": node,
+        "state": _sanitize_state_for_trace(state),
+        "timestamp": datetime.now().isoformat(),
+    }
+    _execution_traces[thread_id].append(trace_entry)
+    logger.info(
+        f"[Trace] thread={thread_id}, node={node}, trace_count={len(_execution_traces[thread_id])}"
+    )
+
+
+def _sanitize_state_for_trace(state: dict) -> dict:
+    """清理状态数据，移除不可序列化的对象，用于轨迹记录"""
+    sanitized = {}
+    for key, value in state.items():
+        if key == "messages" and isinstance(value, Sequence):
+            sanitized[key] = [
+                (
+                    {
+                        "role": "human" if isinstance(m, HumanMessage) else "ai",
+                        "content": m.content,
+                    }
+                    if hasattr(m, "content")
+                    else str(m)
+                )
+                for m in value
+            ]
+        elif isinstance(value, (str, int, float, bool, list, dict, type(None))):
+            sanitized[key] = value
+        else:
+            sanitized[key] = str(value)
+    return sanitized
+
+
+def get_execution_trace(thread_id: str) -> list:
+    """获取指定 thread_id 的执行轨迹"""
+    return _execution_traces.get(thread_id, [])
+
+
+def clear_execution_trace(thread_id: str):
+    """清除指定 thread_id 的执行轨迹"""
+    if thread_id in _execution_traces:
+        del _execution_traces[thread_id]
+
+
+def generate_mermaid_sequence(trace: list) -> str:
+    """根据执行轨迹生成 Mermaid 序列图"""
+    if not trace:
+        return "sequenceDiagram\n    participant U as User\n    participant S as System\n    U->>S: No trace data"
+
+    lines = ["sequenceDiagram"]
+    lines.append("    participant U as User")
+
+    participants = set()
+    for entry in trace:
+        node = entry.get("node", "")
+        if node:
+            participants.add(node)
+
+    for node in sorted(participants):
+        lines.append(f"    participant {node} as {node.capitalize()}")
+
+    lines.append("")
+
+    prev_node = "U"
+    for entry in trace:
+        node = entry.get("node", "")
+        state = entry.get("state", {})
+        timestamp = entry.get("timestamp", "")
+
+        needs_tool = state.get("needs_tool", False)
+        tool_name = state.get("tool_name", "")
+        confidence = state.get("confidence", 0.0)
+        approved = state.get("approved", False)
+        pending = state.get("pending_approval", False)
+
+        note_parts = []
+        if needs_tool and tool_name:
+            note_parts.append(f"tool={tool_name}")
+        if confidence > 0:
+            note_parts.append(f"confidence={confidence:.2f}")
+        if pending:
+            note_parts.append("pending_approval")
+        elif approved:
+            note_parts.append("approved")
+
+        note = ", ".join(note_parts) if note_parts else "processing"
+
+        lines.append(f"    {prev_node}->>{node}: {note}")
+        if timestamp:
+            lines.append(f"    Note over {node}: {timestamp}")
+
+        prev_node = node
+
+    lines.append(f"    {prev_node}-->>U: response")
+
+    return "\n".join(lines)
 
 
 CONFIDENCE_THRESHOLD = 0.7
@@ -524,7 +630,7 @@ def get_langgraph_graph():
 
 async def run_langgraph(user_input: str, thread_id: str = "default") -> dict:
     """
-    运行 LangGraph 状态机
+    运行 LangGraph 状态机（带执行轨迹追踪）
 
     Args:
         user_input: 用户输入
@@ -536,8 +642,9 @@ async def run_langgraph(user_input: str, thread_id: str = "default") -> dict:
     graph = get_langgraph_graph()
     config = {"configurable": {"thread_id": thread_id}}
 
-    # 只传递新输入，LangGraph 会通过 checkpointer 自动恢复之前的状态
-    # messages 字段的 operator.add 会自动将新消息添加到历史记录中
+    # 清除旧轨迹
+    clear_execution_trace(thread_id)
+
     initial_state = {
         "messages": [HumanMessage(content=user_input)],
         "user_input": user_input,
@@ -545,9 +652,26 @@ async def run_langgraph(user_input: str, thread_id: str = "default") -> dict:
         "pending_approval": False,
     }
 
-    result = await graph.ainvoke(initial_state, config)
+    # 使用 astream 逐步执行并记录轨迹
+    result = None
+    async for event in graph.astream(initial_state, config, stream_mode="updates"):
+        for node_name, node_state in event.items():
+            if node_name != "__end__":
+                _record_trace(thread_id, node_name, node_state)
+        # 最后一个 event 包含最终结果
+        result = event
 
-    return result
+    # 如果 astream 返回的是 updates 格式，需要重新获取最终状态
+    if result is None or not isinstance(result, dict):
+        result = await graph.ainvoke(initial_state, config)
+    else:
+        # 尝试获取完整最终状态
+        try:
+            result = await graph.ainvoke(initial_state, config)
+        except Exception:
+            pass
+
+    return result if isinstance(result, dict) else {}
 
 
 async def update_approval(
@@ -701,4 +825,7 @@ __all__ = [
     "update_approval",
     "get_approval_status",
     "get_session_info",
+    "get_execution_trace",
+    "clear_execution_trace",
+    "generate_mermaid_sequence",
 ]
