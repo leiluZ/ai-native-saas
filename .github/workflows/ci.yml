@@ -1,10 +1,16 @@
-name: CI Pipeline
+name: CI Pipeline (Week3)
 
 on:
   push:
     branches: [main, develop, week*-*]
+    paths:
+      - 'ai-saas-week3/**'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main, develop]
+    paths:
+      - 'ai-saas-week3/**'
+      - '.github/workflows/ci.yml'
 
 env:
   PYTHON_VERSION: "3.12"
@@ -12,7 +18,7 @@ env:
 
 jobs:
   lint:
-    name: Lint Code
+    name: Lint Code (Week3)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -22,55 +28,33 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
 
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff black yamllint
+          pip install ruff black
 
-      - name: Run ruff lint for week1
+      - name: Run ruff lint for week3
         run: |
-          if [ -d "ai-saas-week1/app/backend/src/" ]; then
-            ruff check ai-saas-week1/app/backend/src/
+          if [ -d "ai-saas-week3/app/backend/src/" ]; then
+            ruff check ai-saas-week3/app/backend/src/
           fi
 
-      - name: Run ruff lint for week2
+      - name: Check black formatting for week3
         run: |
-          if [ -d "ai-saas-week2/app/backend/src/" ]; then
-            ruff check ai-saas-week2/app/backend/src/
+          if [ -d "ai-saas-week3/app/backend/src/" ]; then
+            black --check ai-saas-week3/app/backend/src/
           fi
 
-      - name: Check black formatting for week1
+      - name: Check YAML files for week3
         run: |
-          if [ -d "ai-saas-week1/app/backend/src/" ]; then
-            black --check ai-saas-week1/app/backend/src/
+          pip install yamllint
+          if [ -f "ai-saas-week3/docker-compose.yml" ]; then
+            yamllint -d relaxed ai-saas-week3/docker-compose.yml
           fi
 
-      - name: Check black formatting for week2
-        run: |
-          if [ -d "ai-saas-week2/app/backend/src/" ]; then
-            black --check ai-saas-week2/app/backend/src/
-          fi
-
-      - name: Check YAML files for week1
-        run: |
-          if [ -f "ai-saas-week1/docker-compose.yml" ]; then
-            yamllint -d relaxed ai-saas-week1/docker-compose.yml
-          fi
-
-      - name: Check YAML files for week2
-        run: |
-          if [ -f "ai-saas-week2/docker-compose.yml" ]; then
-            yamllint -d relaxed ai-saas-week2/docker-compose.yml
-          fi
-
-  backend-tests-week1:
-    name: Backend Tests (Week1)
+  backend-tests-week3:
+    name: Backend Tests (Week3)
     runs-on: ubuntu-latest
     needs: lint
     if: always() && needs.lint.result == 'success'
@@ -87,29 +71,26 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest pytest-asyncio pytest-mock pytest-cov
-          if [ -f "ai-saas-week1/app/backend/requirements.txt" ]; then
-            pip install -r ai-saas-week1/app/backend/requirements.txt
+          if [ -f "ai-saas-week3/app/backend/requirements.txt" ]; then
+            pip install -r ai-saas-week3/app/backend/requirements.txt
           fi
 
-      - name: Run backend tests for week1
+      - name: Run backend tests for week3
         run: |
-          if [ -d "ai-saas-week1/app/backend/tests/" ]; then
-            cd ai-saas-week1/app/backend
-            PYTHONPATH=. pytest tests/test_llm_client.py \
-                   tests/test_tool_registry.py \
-                   tests/test_memory_manager.py \
-                   tests/test_agent_router.py \
-                   -v --cov=src/agents/ --cov-report=xml
+          if [ -d "ai-saas-week3/app/backend/tests/" ]; then
+            cd ai-saas-week3/app/backend
+            PYTHONPATH=. pytest tests/ \
+                   -v --cov=src/ --cov-report=xml
           fi
 
-      - name: Upload coverage for week1
+      - name: Upload coverage for week3
         uses: codecov/codecov-action@v4
         with:
-          files: ai-saas-week1/app/backend/coverage.xml
-          flags: backend-week1
+          files: ai-saas-week3/app/backend/coverage.xml
+          flags: backend-week3
 
-  backend-tests-week2:
-    name: Backend Tests (Week2)
+  rag-tests-week3:
+    name: RAG Module Tests (Week3)
     runs-on: ubuntu-latest
     needs: lint
     if: always() && needs.lint.result == 'success'
@@ -126,231 +107,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest pytest-asyncio pytest-mock pytest-cov
-          if [ -f "ai-saas-week2/app/backend/requirements.txt" ]; then
-            pip install -r ai-saas-week2/app/backend/requirements.txt
+          pip install tqdm pypdf python-docx beautifulsoup4 tiktoken
+          if [ -f "ai-saas-week3/app/backend/requirements.txt" ]; then
+            pip install -r ai-saas-week3/app/backend/requirements.txt
           fi
 
-      - name: Run backend tests for week2
+      - name: Run RAG tests for week3
         run: |
-          if [ -d "ai-saas-week2/app/backend/tests/" ]; then
-            cd ai-saas-week2/app/backend
-            PYTHONPATH=. pytest tests/test_llm_client.py \
-                   tests/test_tool_registry.py \
-                   tests/test_memory_manager.py \
-                   tests/test_agent_router.py \
-                   -v --cov=src/agents/ --cov-report=xml
-          fi
+          cd ai-saas-week3/app/backend
+          PYTHONPATH=. python scripts/test_document_parser.py
 
-      - name: Upload coverage for week2
-        uses: codecov/codecov-action@v4
-        with:
-          files: ai-saas-week2/app/backend/coverage.xml
-          flags: backend-week2
-
-  frontend-tests-week1:
-    name: Frontend Tests (Week1)
+  docker-build-week3:
+    name: Docker Build (Week3)
     runs-on: ubuntu-latest
-    needs: lint
-    if: always() && needs.lint.result == 'success'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install dependencies for week1
-        run: |
-          if [ -d "ai-saas-week1/app/web/" ]; then
-            cd ai-saas-week1/app/web
-            npm ci
-          fi
-
-      - name: Install Playwright Browsers for week1
-        run: |
-          if [ -d "ai-saas-week1/app/web/" ] && grep -q '"@playwright/test"' ai-saas-week1/app/web/package.json; then
-            cd ai-saas-week1/app/web
-            npx playwright install chromium --with-deps
-          fi
-
-      - name: Run tests for week1
-        run: |
-          if [ -d "ai-saas-week1/app/web/" ]; then
-            cd ai-saas-week1/app/web
-            if grep -q '"test"' package.json; then
-              npm test
-            else
-              echo "No test script found, skipping..."
-            fi
-          fi
-
-  frontend-tests-week2:
-    name: Frontend Tests (Week2)
-    runs-on: ubuntu-latest
-    needs: lint
-    if: always() && needs.lint.result == 'success'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install dependencies for week2
-        run: |
-          if [ -d "ai-saas-week2/app/web/" ]; then
-            cd ai-saas-week2/app/web
-            npm ci
-          fi
-
-      - name: Install Playwright Browsers for week2
-        run: |
-          if [ -d "ai-saas-week2/app/web/" ] && grep -q '"@playwright/test"' ai-saas-week2/app/web/package.json; then
-            cd ai-saas-week2/app/web
-            npx playwright install chromium --with-deps
-          fi
-
-      - name: Run tests for week2
-        run: |
-          if [ -d "ai-saas-week2/app/web/" ]; then
-            cd ai-saas-week2/app/web
-            if grep -q '"test"' package.json; then
-              npm test
-            else
-              echo "No test script found, skipping..."
-            fi
-          fi
-
-  e2e-tests-week1:
-    name: E2E Tests (Week1)
-    runs-on: ubuntu-latest
-    needs: [lint, backend-tests-week1]
-    if: always() && needs.lint.result == 'success' && needs.backend-tests-week1.result == 'success'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Install Docker Compose
-        run: |
-          DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
-          mkdir -p $DOCKER_CONFIG/cli-plugins
-          curl -SL https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
-          chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
-          docker compose version
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install Playwright Browsers
-        run: |
-          if [ -d "ai-saas-week1/app/web/" ] && grep -q '"@playwright/test"' ai-saas-week1/app/web/package.json; then
-            cd ai-saas-week1/app/web
-            npm ci
-            npx playwright install chromium --with-deps
-          else
-            echo "Playwright not configured for week1, skipping..."
-          fi
-
-      - name: Start backend services
-        run: |
-          if [ -f "ai-saas-week1/docker-compose.yml" ]; then
-            cd ai-saas-week1
-            cp .env.example .env
-            docker compose up -d
-            sleep 10
-          fi
-
-      - name: Run E2E tests for week1
-        run: |
-          if [ -d "ai-saas-week1/app/web/" ] && grep -q '"@playwright/test"' ai-saas-week1/app/web/package.json; then
-            cd ai-saas-week1/app/web
-            npx playwright test --reporter=list
-          else
-            echo "E2E tests not configured for week1, skipping..."
-          fi
-
-      - name: Upload test results for week1
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: playwright-report-week1
-          path: ai-saas-week1/app/web/playwright-report/
-          retention-days: 7
-
-  e2e-tests-week2:
-    name: E2E Tests (Week2)
-    runs-on: ubuntu-latest
-    needs: [lint, backend-tests-week2]
-    if: always() && needs.lint.result == 'success' && needs.backend-tests-week2.result == 'success'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Install Docker Compose
-        run: |
-          DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
-          mkdir -p $DOCKER_CONFIG/cli-plugins
-          curl -SL https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
-          chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
-          docker compose version
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install Playwright Browsers
-        run: |
-          if [ -d "ai-saas-week2/app/web/" ] && grep -q '"@playwright/test"' ai-saas-week2/app/web/package.json; then
-            cd ai-saas-week2/app/web
-            npm ci
-            npx playwright install chromium --with-deps
-          else
-            echo "Playwright not configured for week2, skipping..."
-          fi
-
-      - name: Start backend services
-        run: |
-          if [ -f "ai-saas-week2/docker-compose.yml" ]; then
-            cd ai-saas-week2
-            cp .env.example .env
-            docker compose up -d
-            sleep 10
-          fi
-
-      - name: Run E2E tests for week2
-        run: |
-          if [ -d "ai-saas-week2/app/web/" ] && grep -q '"@playwright/test"' ai-saas-week2/app/web/package.json; then
-            cd ai-saas-week2/app/web
-            npx playwright test --reporter=list
-          else
-            echo "E2E tests not configured for week2, skipping..."
-          fi
-
-      - name: Upload test results for week2
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: playwright-report-week2
-          path: ai-saas-week2/app/web/playwright-report/
-          retention-days: 7
-
-  docker-build:
-    name: Docker Build
-    runs-on: ubuntu-latest
-    needs: [backend-tests-week1, backend-tests-week2, frontend-tests-week1, frontend-tests-week2]
+    needs: [backend-tests-week3, rag-tests-week3]
     if: github.event_name == 'push' && always()
     steps:
       - name: Checkout code
@@ -359,40 +129,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build week1 backend image
+      - name: Build week3 backend image
         uses: docker/build-push-action@v5
         with:
-          context: ai-saas-week1/app/backend
+          context: ai-saas-week3/app/backend
           push: false
-          tags: ai-saas-backend-week1:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build week2 backend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ai-saas-week2/app/backend
-          push: false
-          tags: ai-saas-backend-week2:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build week1 web image
-        uses: docker/build-push-action@v5
-        with:
-          context: ai-saas-week1
-          file: ai-saas-week1/infra/Dockerfile.web
-          push: false
-          tags: ai-saas-web-week1:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build week2 web image
-        uses: docker/build-push-action@v5
-        with:
-          context: ai-saas-week2
-          file: ai-saas-week2/infra/Dockerfile.web
-          push: false
-          tags: ai-saas-web-week2:test
+          tags: ai-saas-backend-week3:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
