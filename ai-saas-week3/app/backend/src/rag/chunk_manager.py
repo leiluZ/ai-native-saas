@@ -23,6 +23,9 @@ class ChunkManager:
         overlap_ratio: Optional[float] = None,
     ) -> List[ChunkResult]:
         """分块文档"""
+        if not content or not content.strip():
+            return []
+
         actual_chunk_size = chunk_size or self.chunk_size
         actual_overlap = overlap_ratio or self.overlap_ratio
         overlap_tokens = int(actual_chunk_size * actual_overlap)
@@ -46,16 +49,23 @@ class ChunkManager:
                 continue
             seen_hashes.add(chunk_hash)
 
+            metadata = {
+                "source": source,
+                "strategy": strategy,
+                "chunk_size": actual_chunk_size,
+                "overlap_ratio": actual_overlap,
+            }
+
+            if strategy == "header_aware":
+                heading_info = self._extract_heading_info(chunk)
+                if heading_info:
+                    metadata["heading"] = heading_info
+
             results.append(
                 ChunkResult(
                     chunk_id=f"{self._compute_hash(source + str(i))[:16]}",
                     content=chunk,
-                    metadata={
-                        "source": source,
-                        "strategy": strategy,
-                        "chunk_size": actual_chunk_size,
-                        "overlap_ratio": actual_overlap,
-                    },
+                    metadata=metadata,
                     chunk_index=i,
                     total_chunks=len(chunks),
                     token_count=self._count_tokens(chunk),
@@ -153,6 +163,30 @@ class ChunkManager:
             chunks.append(("\n".join(current_chunk), current_heading))
 
         return [chunk for chunk, _ in chunks]
+
+    def _extract_heading_info(self, chunk: str) -> Optional[Dict[str, str]]:
+        """从chunk中提取标题信息"""
+        import re
+
+        heading_pattern = re.compile(r"^(#{1,6})\s+(.+)")
+        lines = chunk.split("\n")
+
+        h1_heading = None
+        h2_heading = None
+
+        for line in lines:
+            match = heading_pattern.match(line.strip())
+            if match:
+                level = len(match.group(1))
+                heading_text = match.group(2).strip()
+                if level == 1:
+                    h1_heading = heading_text
+                elif level == 2:
+                    h2_heading = heading_text
+
+        if h1_heading or h2_heading:
+            return {"h1": h1_heading, "h2": h2_heading}
+        return None
 
     def _count_tokens(self, text: str) -> int:
         """计算 Token 数量"""
