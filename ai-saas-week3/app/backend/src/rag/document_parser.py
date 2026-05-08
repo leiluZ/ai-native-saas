@@ -1,183 +1,145 @@
-import asyncio
 import json
 import mimetypes
-import os
-from typing import List, Dict, Any, Optional
+from typing import List
 from datetime import datetime
 from pathlib import Path
 
-from pydantic import BaseModel, Field
 from tqdm.asyncio import tqdm_asyncio
 
 from .schemas import ParsedDocument, ParseError
 
 
 class DocumentParser:
+    MIME_PARSERS = {
+        "application/pdf": "_parse_pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "_parse_docx",
+        "text/html": "_parse_html",
+        "text/markdown": "_parse_markdown",
+        "text/plain": "_parse_text",
+    }
+
     def __init__(self):
-        self.parsers = {
-            'application/pdf': self._parse_pdf,
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': self._parse_docx,
-            'text/html': self._parse_html,
-            'text/markdown': self._parse_markdown,
-            'text/plain': self._parse_text,
-        }
+        self.error_log: List[ParseError] = []
 
-    async def parse_files(self, file_paths: List[str]) -> Dict[str, Any]:
-        """批量解析文件"""
-        results = {
-            'success': [],
-            'errors': []
-        }
-
-        tasks = [self._parse_file(path) for path in file_paths]
-        parsed_results = await tqdm_asyncio.gather(*tasks, desc="解析文档")
-
-        for result in parsed_results:
-            if isinstance(result, ParsedDocument):
-                results['success'].append(result.dict())
-            elif isinstance(result, ParseError):
-                results['errors'].append(result.dict())
-
-        if results['errors']:
-            self._write_error_log(results['errors'])
-
-        return results
-
-    async def _parse_file(self, file_path: str) -> ParsedDocument | ParseError:
-        """解析单个文件"""
-        try:
-            mime_type = self._get_mime_type(file_path)
-            parser = self.parsers.get(mime_type)
-
-            if not parser:
-                raise ValueError(f"不支持的文件类型: {mime_type}")
-
-            content, metadata = await parser(file_path)
-            cleaned_content = self._clean_content(content)
-
-            return ParsedDocument(
-                content=cleaned_content,
-                metadata={
-                    **metadata,
-                    'source': file_path,
-                    'mime_type': mime_type,
-                    'parsed_at': datetime.now().isoformat()
-                }
-            )
-        except Exception as e:
-            return ParseError(
-                file_path=file_path,
-                error_message=str(e),
-                error_type=type(e).__name__,
-                timestamp=datetime.now().isoformat()
-            )
-
-    def _get_mime_type(self, file_path: str) -> str:
-        """获取文件 MIME 类型"""
+    async def parse_file(self, file_path: str) -> ParsedDocument:
         mime_type, _ = mimetypes.guess_type(file_path)
-        return mime_type or 'application/octet-stream'
 
-    async def _parse_pdf(self, file_path: str) -> tuple[str, Dict[str, Any]]:
-        """解析 PDF 文件"""
+        if mime_type is None:
+            mime_type = "text/plain"
+
+        parser_method = self.MIME_PARSERS.get(mime_type, "_parse_text")
+
         try:
-            from pypdf import PdfReader
+            content = await getattr(self, parser_method)(file_path)
+            cleaned = self._clean_content(content)
+            metadata = {
+                "source": file_path,
+                "mime_type": mime_type,
+                "parsed_at": datetime.now().isoformat(),
+            }
+            return ParsedDocument(content=cleaned, metadata=metadata)
+        except Exception as e:
+            error = ParseError(
+                file_path=file_path, error=str(e), timestamp=datetime.now().isoformat()
+            )
+            self.error_log.append(error)
+            self._save_error_log()
+            raise
 
-            loop = asyncio.get_event_loop()
-            reader = await loop.run_in_executor(None, PdfReader, file_path)
+    async def parse_directory(
+        self, directory: str, recursive: bool = True
+    ) -> List[ParsedDocument]:
+        path = Path(directory)
+        pattern = "**/*" if recursive else "*"
+        files = [str(f) for f in path.glob(pattern) if f.is_file()]
 
-            content = ""
-            metadata = {'page_count': len(reader.pages)}
+        tasks = [self.parse_file(f) for f in files]
+        results = await tqdm_asyncio.gather(*tasks, return_exceptions=True)
 
-            for page_num, page in enumerate(reader.pages, 1):
-                page_text = page.extract_text() or ""
-                content += f"\n--- Page {page_num} ---\n{page_text}"
+        parsed = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                error = ParseError(
+                    file_path=files[i],
+                    error=str(result),
+                    timestamp=datetime.now().isoformat(),
+                )
+                self.error_log.append(error)
+            else:
+                parsed.append(result)
 
-            return content.strip(), metadata
+        if self.error_log:
+            self._save_error_log()
+
+        return parsed
+
+    async def _parse_pdf(self, file_path: str) -> str:
+        try:
+            import pdfplumber
+
+            text_parts = []
+            with pdfplumber.open(file_path) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_parts.append(page_text)
+            return "\n".join(text_parts)
         except ImportError:
-            raise ImportError("需要安装 pypdf: pip install pypdf")
+            return await self._parse_with_unstructured(file_path)
 
-    async def _parse_docx(self, file_path: str) -> tuple[str, Dict[str, Any]]:
-        """解析 DOCX 文件"""
+    async def _parse_docx(self, file_path: str) -> str:
         try:
             from docx import Document
 
-            loop = asyncio.get_event_loop()
-            doc = await loop.run_in_executor(None, Document, file_path)
-
-            content = "\n".join([para.text for para in doc.paragraphs])
-            metadata = {'paragraph_count': len(doc.paragraphs)}
-
-            return content, metadata
+            doc = Document(file_path)
+            return "\n".join([p.text for p in doc.paragraphs])
         except ImportError:
-            raise ImportError("需要安装 python-docx: pip install python-docx")
+            return await self._parse_with_unstructured(file_path)
 
-    async def _parse_html(self, file_path: str) -> tuple[str, Dict[str, Any]]:
-        """解析 HTML 文件"""
+    async def _parse_html(self, file_path: str) -> str:
+        from bs4 import BeautifulSoup
+
+        with open(file_path, "r", encoding="utf-8") as f:
+            soup = BeautifulSoup(f.read(), "html.parser")
+        return soup.get_text(separator=" ", strip=True)
+
+    async def _parse_markdown(self, file_path: str) -> str:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    async def _parse_text(self, file_path: str) -> str:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    async def _parse_with_unstructured(self, file_path: str) -> str:
         try:
-            from bs4 import BeautifulSoup
+            from unstructured.partition.auto import partition
 
-            loop = asyncio.get_event_loop()
-
-            with open(file_path, 'r', encoding='utf-8') as f:
-                soup = await loop.run_in_executor(None, BeautifulSoup, f.read(), 'html.parser')
-
-            content = soup.get_text(separator='\n', strip=True)
-            metadata = {'title': soup.title.string if soup.title else ""}
-
-            return content, metadata
+            elements = partition(filename=file_path)
+            return "\n".join([str(el) for el in elements])
         except ImportError:
-            raise ImportError("需要安装 beautifulsoup4: pip install beautifulsoup4")
-
-    async def _parse_markdown(self, file_path: str) -> tuple[str, Dict[str, Any]]:
-        """解析 Markdown 文件"""
-        loop = asyncio.get_event_loop()
-
-        def read_file():
-            with open(file_path, 'r', encoding='utf-8') as f:
-                return f.read()
-
-        content = await loop.run_in_executor(None, read_file)
-        return content, {}
-
-    async def _parse_text(self, file_path: str) -> tuple[str, Dict[str, Any]]:
-        """解析纯文本文件"""
-        loop = asyncio.get_event_loop()
-
-        def read_file():
-            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
-                return f.read()
-
-        content = await loop.run_in_executor(None, read_file)
-        return content, {}
+            return await self._parse_text(file_path)
 
     def _clean_content(self, content: str) -> str:
-        """清洗文档内容"""
-        import re
+        lines = content.split("\n")
+        cleaned_lines = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            if any(marker in line for marker in ["---PAGE---", "[PAGE]", "Page \\d+"]):
+                continue
+            if line.isdigit() and len(line) < 5:
+                continue
+            cleaned_lines.append(line)
 
-        # 去除多余空白
-        content = re.sub(r'\n{3,}', '\n\n', content)
-        content = re.sub(r' {2,}', ' ', content)
-        content = re.sub(r'\t+', ' ', content)
+        text = "\n".join(cleaned_lines)
+        text = "\n".join(line for line in text.split("\n") if line.strip())
 
-        # 去除页码和水印占位符
-        content = re.sub(r'^\s*\d+\s*$', '', content, flags=re.MULTILINE)
-        content = re.sub(r'-\d+-', '', content)
-        content = re.sub(r'Page\s+\d+\s+of\s+\d+', '', content, flags=re.IGNORECASE)
+        return text
 
-        # 去除页眉页脚常见模式
-        content = re.sub(r'^\s*[\u4e00-\u9fa5a-zA-Z0-9_]{1,10}\s*$', '', content, flags=re.MULTILINE)
-
-        # 统一 Unicode 编码
-        content = content.encode('unicode_escape').decode('unicode_escape')
-
-        return content.strip()
-
-    def _write_error_log(self, errors: List[Dict[str, Any]]) -> None:
-        """写入错误日志"""
-        log_dir = Path('error_logs')
-        log_dir.mkdir(exist_ok=True)
-
-        log_path = log_dir / f"error_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-
-        with open(log_path, 'w', encoding='utf-8') as f:
-            json.dump(errors, f, ensure_ascii=False, indent=2)
+    def _save_error_log(self):
+        with open("error_log.json", "w", encoding="utf-8") as f:
+            json.dump(
+                [e.dict() for e in self.error_log], f, ensure_ascii=False, indent=2
+            )
