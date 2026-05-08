@@ -79,15 +79,8 @@ jobs:
         run: |
           if [ -d "ai-saas-week3/app/backend/tests/" ]; then
             cd ai-saas-week3/app/backend
-            PYTHONPATH=. pytest tests/ \
-                   -v --cov=src/ --cov-report=xml
+            PYTHONPATH=. pytest tests/ -v
           fi
-
-      - name: Upload coverage for week3
-        uses: codecov/codecov-action@v4
-        with:
-          files: ai-saas-week3/app/backend/coverage.xml
-          flags: backend-week3
 
   rag-tests-week3:
     name: RAG Pipeline Tests (Week3)
@@ -115,7 +108,7 @@ jobs:
         run: |
           if [ -d "ai-saas-week3/app/backend/tests/" ]; then
             cd ai-saas-week3/app/backend
-            PYTHONPATH=. pytest tests/ -v -k "rag" --cov=src/rag/ --cov-report=xml
+            PYTHONPATH=. pytest tests/ -v -k "rag"
           fi
 
       - name: Run document parser test script
@@ -218,6 +211,7 @@ jobs:
       - name: Start services with Docker Compose
         run: |
           cd ai-saas-week3
+          cp .env.example .env
           docker compose up -d
           sleep 10
 
