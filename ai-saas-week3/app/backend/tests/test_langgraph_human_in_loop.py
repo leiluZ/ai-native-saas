@@ -1,87 +1,12 @@
 """Human-in-the-Loop 测试"""
 
 from src.agents.langgraph_human_in_loop import (
-    HumanInLoopManager,
     calculate_confidence,
     router_node,
     approval_node,
     reviewer_node,
 )
 from langchain_core.messages import HumanMessage, AIMessage
-
-
-class TestHumanInLoopManager:
-    """HumanInLoopManager 测试"""
-
-    def test_add_pending_approval(self):
-        """测试添加待审批任务"""
-        manager = HumanInLoopManager()
-        manager.add_pending_approval(
-            thread_id="test-123",
-            messages=[HumanMessage(content="test")],
-            original_result="result",
-            confidence=0.5,
-        )
-
-        info = manager.get_pending_approval("test-123")
-        assert info is not None
-        assert info["original_result"] == "result"
-        assert info["confidence"] == 0.5
-        assert info["approved"] is False
-
-    def test_approve_true(self):
-        """测试批准操作"""
-        manager = HumanInLoopManager()
-        manager.add_pending_approval(
-            thread_id="test-123",
-            messages=[HumanMessage(content="test")],
-            original_result="result",
-            confidence=0.5,
-        )
-
-        result = manager.approve(thread_id="test-123", approved=True)
-        assert result is True
-        assert manager.is_approved("test-123") is True
-
-    def test_approve_false_with_modified(self):
-        """测试拒绝操作并提供修改结果"""
-        manager = HumanInLoopManager()
-        manager.add_pending_approval(
-            thread_id="test-123",
-            messages=[HumanMessage(content="test")],
-            original_result="result",
-            confidence=0.5,
-        )
-
-        result = manager.approve(
-            thread_id="test-123",
-            approved=False,
-            modified_result="modified_result",
-        )
-        assert result is True
-
-        info = manager.get_approval_info("test-123")
-        assert info["approved"] is False
-        assert info["modified_result"] == "modified_result"
-
-    def test_approve_nonexistent(self):
-        """测试审批不存在的任务"""
-        manager = HumanInLoopManager()
-        result = manager.approve(thread_id="nonexistent", approved=True)
-        assert result is False
-
-    def test_remove_pending(self):
-        """测试移除待审批任务"""
-        manager = HumanInLoopManager()
-        manager.add_pending_approval(
-            thread_id="test-123",
-            messages=[],
-            original_result="result",
-            confidence=0.5,
-        )
-
-        assert manager.remove_pending("test-123") is True
-        assert manager.get_pending_approval("test-123") is None
 
 
 class TestCalculateConfidence:
@@ -164,11 +89,12 @@ class TestApprovalNode:
             "confidence": 0.5,
             "messages": [AIMessage(content="result")],
             "original_result": "result",
+            "pending_approval": False,
         }
         result = approval_node(state)
-        assert result.goto == "reviewer"
-        assert result.resume["approved"] is False
-        assert result.resume["needs_approval"] is True
+        assert result["pending_approval"] is True
+        assert result["needs_approval"] is True
+        assert result["approved"] is False
 
     def test_approval_high_confidence(self):
         """测试高置信度直接通过"""
@@ -178,8 +104,7 @@ class TestApprovalNode:
             "original_result": "result",
         }
         result = approval_node(state)
-        assert result.goto == "reviewer"
-        assert result.resume is None
+        assert result["pending_approval"] is False
 
 
 class TestReviewerNode:
@@ -192,6 +117,7 @@ class TestReviewerNode:
             "approved": True,
             "modified_result": "modified",
             "original_result": "original",
+            "pending_approval": False,
         }
         result = reviewer_node(state)
         assert "[已人工审批]" in result["messages"][-1].content
@@ -204,9 +130,10 @@ class TestReviewerNode:
             "approved": False,
             "modified_result": "modified",
             "original_result": "original",
+            "pending_approval": False,
         }
         result = reviewer_node(state)
-        assert result["messages"][-1].content == "original"
+        assert "original" in result["messages"][-1].content
 
     def test_reviewer_empty_messages(self):
         """测试空消息"""

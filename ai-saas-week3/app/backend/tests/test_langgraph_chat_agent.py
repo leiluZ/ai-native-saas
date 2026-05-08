@@ -12,7 +12,7 @@
 import pytest
 from langchain_core.messages import HumanMessage, AIMessage
 
-from app.agents.langgraph_chat_agent import (
+from src.agents.langgraph_chat_agent import (
     AgentState,
     analyze_node,
     tool_node,
