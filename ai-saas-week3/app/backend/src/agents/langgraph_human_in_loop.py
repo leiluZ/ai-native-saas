@@ -84,7 +84,9 @@ def calculate_confidence(result: str, tool_name: str) -> float:
         if any(unit in result for unit in ["°C", "°F", "℃", "温度", "weather", "天气"]):
             format_ok = True
     elif tool_name == "get_current_time":
-        if any(unit in result for unit in [":", "时", "分", "AM", "PM", "时间", "time"]):
+        if any(
+            unit in result for unit in [":", "时", "分", "AM", "PM", "时间", "time"]
+        ):
             format_ok = True
     elif tool_name == "calculate":
         if re.search(r"[\d]", result):
