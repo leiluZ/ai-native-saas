@@ -1,45 +1,107 @@
-# AI SaaS Week1 Scaffold
+# Week 3: RAG 管道构建与检索评估
 
-A minimal monorepo scaffold for an AI SaaS starter project.
+> **本周目标**: 构建生产级 RAG，掌握文档解析、智能分块、混合检索、重排与自动化评估闭环。
 
-## Architecture
+---
+
+## 第一部分：本周学习计划与目标
+
+### 7 天学习路线
+
+|   天数    | 主题                          | 学习目标                                                                         |
+| :-------: | :---------------------------- | :------------------------------------------------------------------------------- |
+| **Day 1** | 文档解析与清洗流水线          | 掌握多格式文档提取、表格/OCR 解析与噪声清洗，构建可复用的 ETL 管道               |
+| **Day 2** | 智能分块策略实现              | 理解分块粒度对召回的影响，实现语义/结构/Token 重叠分块算法                       |
+| **Day 3** | Embedding 与向量索引构建      | 掌握 BGE-M3 多语言 Embedding，构建 Milvus/Chroma 高效向量索引                    |
+| **Day 4** | 混合检索与 Cross-Encoder 重排 | 突破单一向量检索瓶颈，实现 BM25 + 向量融合 + 精排闭环                            |
+| **Day 5** | RAGAS 自动化评估闭环          | 建立量化评估体系，自动化计算 Faithfulness / Answer Relevance / Context Precision |
+| **Day 6** | 基于评估分数的自动调优        | 用数据驱动参数寻优，自动化调整 chunk_size 与 rerank 阈值                         |
+| **Day 7** | 集成 rag_search 至 Agent 管道 | 将 RAG 管道封装为工具，无缝接入 LangGraph Agent，输出带引用的结构化答案          |
+
+### 本周核心目标
+
+1. **文档处理流水线**: 支持 PDF/DOCX/TXT/HTML/Markdown 多格式解析，清洗成功率 >95%
+2. **智能分块策略**: 实现固定长度/递归/标题感知分块，Token 重叠去重
+3. **向量检索系统**: BGE-M3 Embedding + Milvus 索引，10k 分块入库 < 2min
+4. **混合检索与重排**: BM25 + 向量融合 + Cross-Encoder 精排，Top-3 命中率提升 >30%
+5. **自动化评估**: RAGAS 一键评估，支持参数自动调优
+6. **Agent 集成**: RAG 管道封装为工具，接入 LangGraph Agent
+
+---
+
+## 第二部分：Sample Project 介绍
+
+### 项目概述
+
+本项目是一个**生产级 RAG（检索增强生成）管道系统**，实现了：
+
+- 多格式文档解析与清洗流水线
+- 智能分块策略（固定长度/递归/标题感知）
+- BGE-M3 Embedding + Milvus 向量索引
+- 混合检索（BM25 + 向量）+ Cross-Encoder 重排
+- RAGAS 自动化评估与参数调优
+- RAG 工具集成至 LangGraph Agent
+
+### 系统架构
 
 ```mermaid
 graph TB
     subgraph External["External"]
         User[("User")]
+        DocSource[(文档源)]
     end
 
     subgraph Frontend["Frontend - React"]
         Web[Web UI<br/>Port 3000]
+        Upload[文档上传组件]
     end
 
-    subgraph Backend["Backend - FastAPI"]
+    subgraph Backend["Backend - FastAPI + LangChain"]
         API[API Server<br/>Port 8000]
-        Agent[Agent Router<br/>chat_agent.py]
-        LLM[LLM Client<br/>llm_client.py]
-        Tools[Tool Registry<br/>tool_registry.py]
-        Memory[Memory Manager<br/>memory_manager.py]
+
+        subgraph RAG_Pipeline["RAG Pipeline"]
+            Parser[文档解析器<br/>document_parser.py]
+            Cleaner[清洗器<br/>cleaner.py]
+            Chunker[智能分块器<br/>chunk_manager.py]
+            Embedding[BGE-M3 编码器<br/>embedding_service.py]
+            VectorStore[Milvus 索引<br/>vector_store.py]
+            Retriever[检索器<br/>retriever.py]
+            Reranker[重排序器<br/>reranker.py]
+            Generator[响应生成器<br/>generator.py]
+        end
+
+        Evaluator[检索评估<br/>evaluator.py]
     end
 
     subgraph Data["Data Layer"]
-        DB[(PostgreSQL<br/>Port 5432)]
-        Redis[(Redis<br/>Port 6379)]
+        DB[(PostgreSQL)]
+        Redis[(Redis)]
+        Milvus[(Milvus<br/>Port 19530)]
     end
 
     subgraph LLM_Service["LLM Service"]
         Ollama[(Ollama<br/>Port 11434)]
+        EmbeddingModel[(BGE-M3)]
     end
 
     User --> Web
     Web --> API
-    API --> Agent
-    Agent --> LLM
-    Agent --> Tools
-    Agent --> Memory
-    LLM --> Ollama
-    Memory --> Redis
-    API --> DB
+    DocSource --> Upload
+    Upload --> API
+    API --> Parser
+    Parser --> Cleaner
+    Cleaner --> Chunker
+    Chunker --> Embedding
+    Embedding --> VectorStore
+    VectorStore --> Milvus
+    API --> Retriever
+    Retriever --> VectorStore
+    Retriever --> Reranker
+    Reranker --> Generator
+    Generator --> Ollama
+    Generator --> API
+    Evaluator --> Retriever
+    Evaluator --> Generator
 
     style User fill:#f9f,stroke:#333,stroke-width:2px
     style Frontend fill:#bbf,stroke:#333,stroke-width:2px
@@ -48,198 +110,264 @@ graph TB
     style LLM_Service fill:#ff9,stroke:#333,stroke-width:2px
 ```
 
-## AI Workflow
+### 技术栈
+
+| 层级           | 技术                                  | 版本                   |
+| -------------- | ------------------------------------- | ---------------------- |
+| **前端**       | React, TypeScript, Vite, Tailwind CSS | React 19               |
+| **后端**       | Python, FastAPI, SQLAlchemy 2.0       | Python 3.12            |
+| **AI/LLM**     | LangChain, LangChain Core, Ollama     | LangChain 0.3          |
+| **嵌入模型**   | BGE-M3                                | -                      |
+| **向量数据库** | Milvus                                | 2.4                    |
+| **数据库**     | PostgreSQL, Redis                     | PostgreSQL 16, Redis 7 |
+| **评估框架**   | RAGAS                                 | -                      |
+
+### 核心功能模块
+
+#### 1. RAG 管道流程图
 
 ```mermaid
-sequenceDiagram
-    participant User
-    participant Web as React UI
-    participant API as FastAPI
-    participant Agent as Agent Router
-    participant Memory as Memory Manager
-    participant LLM as LLM Client
-    participant Tool as Tool Registry
+flowchart TD
+    A[用户上传文档] --> B[文档解析器]
+    B -->|PDF/Word/TXT/Markdown| C[内容清洗]
+    C --> D[智能分块]
+    D -->|语义切分+固定长度| E[Token 化]
+    E --> F[重叠去重]
+    F --> G[BGE-M3 编码]
+    G --> H[Milvus 向量索引]
+    H -->|批量插入| I[构建完成]
 
-    User->>Web: Send message
-    Web->>API: POST /api/v1/chat
-    API->>Agent: run_agent(prompt)
+    J[用户查询] --> K[查询编码]
+    K --> L[向量检索]
+    L -->|Top-K| M[重排序]
+    M -->|Rerank| N[上下文组装]
+    N --> O[LLM 生成]
+    O --> P[返回结果]
 
-    alt First Request
-        Agent->>Memory: get_memory_context()
-        Memory-->>Agent: context (empty)
-    else Subsequent Requests
-        Agent->>Memory: get_memory_context()
-        Memory-->>Agent: context + summary
-    end
-
-    Agent->>LLM: ainvoke(prompt + context)
-    LLM->>LLM: Check for tool call
-
-    alt Tool Call Detected
-        LLM-->>Agent: "get_weather(location='Beijing')"
-        Agent->>Agent: parse_tool_call()
-        Agent->>Tool: invoke_tool('get_weather', args)
-        Tool-->>Agent: weather result
-        Agent->>LLM: ainvoke(result)
-        LLM-->>Agent: final response
-    else Direct Response
-        LLM-->>Agent: response
-    end
-
-    Agent->>Memory: add_turn(user, assistant)
-    Agent->>Memory: check_and_compress()
-
-    alt Token Limit Exceeded
-        Agent->>LLM: generate_summary()
-        LLM-->>Agent: summary
-        Memory->>Memory: compress history
-    end
-
-    Agent-->>API: response
-    API-->>Web: chat response
-    Web-->>User: Display message
+    Q[评估] --> R[检索指标]
+    Q --> S[生成指标]
 ```
 
-## Structure
+#### 2. 文档处理流水线
+
+| 模块         | 功能描述                   | 关键文件                       |
+| ------------ | -------------------------- | ------------------------------ |
+| **文档解析** | 支持 PDF/Word/TXT/Markdown | `src/rag/document_parser.py`   |
+| **内容清洗** | 去除噪声、格式规范化       | `src/rag/cleaner.py`           |
+| **智能分块** | 语义感知切分策略           | `src/rag/chunk_manager.py`     |
+| **嵌入服务** | BGE-M3 多语言编码          | `src/rag/embedding_service.py` |
+| **向量存储** | Milvus 索引管理            | `src/rag/vector_store.py`      |
+
+#### 3. 检索策略
+
+| 策略           | 描述                 |
+| -------------- | -------------------- |
+| **语义检索**   | 基于向量相似度的召回 |
+| **元数据过滤** | 按文档类型/时间筛选  |
+| **混合检索**   | BM25 + 向量混合      |
+| **重排序**     | Cross-Encoder 精排   |
+
+#### 4. RAG 评估体系
+
+| 评估维度       | 指标                | 说明           |
+| -------------- | ------------------- | -------------- |
+| **检索质量**   | Hit Rate, MRR, MAP  | 衡量检索准确性 |
+| **生成质量**   | BLEU, ROUGE, METEOR | 衡量回答质量   |
+| **事实一致性** | Fact Score          | 验证回答正确性 |
+| **响应时间**   | P95 Latency         | 性能指标       |
+
+### 项目结构
 
 ```
-ai-saas-week1/
+ai-saas-week3/
 ├── app/
-│   ├── backend/              # FastAPI backend
+│   ├── backend/
 │   │   ├── src/
-│   │   │   ├── agents/       # Agent modules (chat_agent, llm_client, etc.)
-│   │   │   ├── models/       # SQLAlchemy models
-│   │   │   ├── routes/       # API routes
-│   │   │   ├── schemas/      # Pydantic schemas
-│   │   │   └── main.py       # Application entry
-│   │   ├── tests/            # pytest tests
-│   │   └── Dockerfile
-│   └── web/                  # React frontend
+│   │   │   ├── rag/
+│   │   │   │   ├── document_parser.py    # 文档解析器
+│   │   │   │   ├── cleaner.py            # 内容清洗
+│   │   │   │   ├── chunk_manager.py      # 智能分块
+│   │   │   │   ├── embedding_service.py  # Embedding 服务
+│   │   │   │   ├── vector_store.py       # 向量存储
+│   │   │   │   ├── retriever.py          # 检索器
+│   │   │   │   ├── reranker.py           # 重排序器
+│   │   │   │   ├── generator.py          # 响应生成
+│   │   │   │   └── evaluator.py          # RAG 评估
+│   │   │   ├── routes/v1/
+│   │   │   │   ├── rag.py                # RAG API
+│   │   │   │   └── documents.py          # 文档管理 API
+│   │   │   └── main.py                   # FastAPI 入口
+│   │   ├── tests/
+│   │   │   ├── test_rag_pipeline.py      # RAG 管道测试
+│   │   │   ├── test_document_parser.py   # 文档解析测试
+│   │   │   ├── test_retrieval.py         # 检索测试
+│   │   │   └── test_evaluation.py        # 评估测试
+│   │   ├── Dockerfile
+│   │   └── requirements.txt
+│   │
+│   └── web/
 │       ├── src/
+│       │   ├── components/
+│       │   │   ├── DocumentUpload.tsx    # 文档上传
+│       │   │   └── RagChat.tsx           # RAG 聊天界面
+│       │   └── store/
+│       ├── e2e/tests/
+│       │   └── rag-workflow.spec.ts      # RAG 流程测试
+│       ├── Dockerfile
 │       └── package.json
-├── infra/                    # Docker infrastructure
-├── docs/                     # Architecture docs
-├── scripts/                  # Helper scripts
-└── docker-compose.yml
+│
+├── docker-compose.yml
+└── README.md
 ```
 
-## Prerequisites
+### 快速开始
+
+#### 环境要求
 
 - Docker & Docker Compose
-- (Optional) OpenAI API key if using OpenAI instead of Ollama
+- Python 3.12+ (可选)
+- Node.js 20+ (可选)
 
-## Quick Start
+#### 启动服务
 
-1. Copy env template:
+```bash
+# 1. 进入项目目录
+cd ai-saas-week3
 
-   ```bash
-   cp .env.example .env
-   ```
+# 2. 配置环境变量
+cp .env.example .env
 
-2. Start all services:
+# 3. 启动所有服务（包括 Milvus）
+docker compose up -d
 
-   ```bash
-   docker-compose up --build
-   ```
+# 4. 查看服务状态
+docker compose ps
 
-   This will automatically:
-
-   - Start PostgreSQL, Redis, and Ollama containers
-   - Run database migrations
-   - Ollama will check if the required model (mistral) exists, and pull it if needed
-
-3. Access the web interface at http://localhost:3000
-
-## LLM Configuration
-
-By default, the application uses **Ollama** with the Mistral model running in a Docker container.
-
-### Option A: Ollama (Default)
-
-```env
-OLLAMA_MODEL=mistral
-OLLAMA_BASE_URL=http://ollama:11434
+# 5. 等待 Milvus 初始化完成（约 1-2 分钟）
 ```
 
-The docker-compose.yml includes an Ollama container that automatically checks for and pulls the configured model on startup.
+#### 服务端口
 
-### Option B: OpenAI / DashScope
+| 服务       | 端口  | 说明          |
+| ---------- | ----- | ------------- |
+| Web UI     | 3000  | React 前端    |
+| API        | 8000  | FastAPI 后端  |
+| PostgreSQL | 5432  | 关系数据库    |
+| Redis      | 6379  | 缓存          |
+| Milvus     | 19530 | 向量数据库    |
+| Ollama     | 11434 | 本地 LLM 服务 |
 
-If you prefer using OpenAI or a compatible API (like Alibaba DashScope):
+### API 文档
 
-```env
-OLLAMA_MODEL=
-OPENAI_API_KEY=sk-your-api-key-here
-OPENAI_MODEL=qwen3.6-plus
-OPENAI_BASE_URL=https://coding.dashscope.aliyuncs.com/v1
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+#### 主要 API 端点
+
+| 端点                     | 方法   | 说明         |
+| ------------------------ | ------ | ------------ |
+| `/api/v1/documents/`     | POST   | 上传文档     |
+| `/api/v1/documents/`     | GET    | 获取文档列表 |
+| `/api/v1/documents/{id}` | DELETE | 删除文档     |
+| `/api/v1/rag/query/`     | POST   | RAG 查询     |
+| `/api/v1/rag/evaluate/`  | POST   | RAG 评估     |
+
+#### 使用示例
+
+```bash
+# 上传文档
+curl -X POST http://localhost:8000/api/v1/documents/ \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@document.pdf" \
+  -F "metadata={\"title\": \"财务报表\", \"category\": \"finance\"}"
+
+# RAG 查询
+curl -X POST http://localhost:8000/api/v1/rag/query/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "公司去年的营收是多少？",
+    "top_k": 5,
+    "rerank": true
+  }'
+
+# RAG 评估
+curl -X POST http://localhost:8000/api/v1/rag/evaluate/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "queries": ["公司去年的营收是多少？"],
+    "ground_truths": ["去年营收为1000万"],
+    "documents": ["doc_123"]
+  }'
 ```
 
-## Environment Variables
+### 测试
 
-| Variable          | Description                  | Default                                                  |
-| ----------------- | ---------------------------- | -------------------------------------------------------- |
-| `DATABASE_URL`    | PostgreSQL connection string | `postgresql+asyncpg://postgres:postgres@db:5432/ai_saas` |
-| `REDIS_URL`       | Redis connection string      | `redis://redis:6379/0`                                   |
-| `OLLAMA_MODEL`    | Ollama model name            | `mistral`                                                |
-| `OLLAMA_BASE_URL` | Ollama server URL            | `http://ollama:11434`                                    |
-| `OPENAI_API_KEY`  | OpenAI/DashScope API key     | (empty)                                                  |
-| `OPENAI_MODEL`    | API model name               | `gpt-3.5-turbo`                                          |
-| `OPENAI_BASE_URL` | API base URL                 | (empty)                                                  |
-
-## Services
-
-| Service | Port  | Description         |
-| ------- | ----- | ------------------- |
-| web     | 3000  | React frontend      |
-| backend | 8000  | FastAPI backend     |
-| db      | 5432  | PostgreSQL database |
-| redis   | 6379  | Redis cache         |
-| ollama  | 11434 | Ollama LLM server   |
-
-## Agent Modules
-
-The agent system is split into modular components:
-
-| Module              | Responsibility                        |
-| ------------------- | ------------------------------------- |
-| `llm_client.py`     | LLM client management (Ollama/OpenAI) |
-| `tool_registry.py`  | Tool registration and invocation      |
-| `memory_manager.py` | Session memory with auto-compression  |
-| `agent_router.py`   | Core agent logic and tool parsing     |
-
-### Memory Management
-
-The `MemoryManager` handles conversation history with automatic token-based compression:
-
-- **Threshold**: Triggers compression when tokens exceed 2000
-- **Summary**: Uses LLM to generate a summary of conversation history
-- **Retention**: Keeps only the last 5 conversation turns after compression
-
-### Tool System
-
-Available tools registered in `ToolRegistry`:
-
-- `get_weather(location)` - Get weather for a city
-- `get_current_time(timezone)` - Get current time
-- `calculate(expression)` - Execute math calculations
-
-## Development
-
-### Running Tests
+#### 后端单元测试
 
 ```bash
 cd app/backend
-pip install pytest pytest-asyncio pytest-mock pytest-cov
-PYTHONPATH=. pytest tests/ -v --cov=src/agents/
+PYTHONPATH=. pytest tests/ -v
+
+# 运行特定测试
+PYTHONPATH=. pytest tests/test_document_parser.py -v
+PYTHONPATH=. pytest tests/test_retrieval.py -v
+PYTHONPATH=. pytest tests/test_evaluation.py -v
 ```
 
-### Local Backend Development
+#### 端到端测试
+
+```bash
+cd app/web
+npm run test:e2e
+```
+
+#### RAG 评估测试
 
 ```bash
 cd app/backend
-uvicorn app.main:app --reload --port 8000
+PYTHONPATH=. python -m src.rag.evaluator --evaluate --report
 ```
 
-## License
+### 验收标准
 
-MIT
+- ✅ 支持 PDF/Word/TXT/Markdown 多格式解析
+- ✅ 智能分块后检索命中率 >90%
+- ✅ 回答与上下文相关度 >85%
+- ✅ 支持元数据过滤检索
+- ✅ 重排序后相关性提升显著
+- ✅ 检索评估报告可生成
+
+---
+
+## 第三部分：总结
+
+### 学习目标实现情况
+
+本项目通过构建一个生产级 RAG 管道系统，实现了 Week 3 的所有学习目标：
+
+| 学习目标                 | 实现方式                                | 关键代码                                                  |
+| ------------------------ | --------------------------------------- | --------------------------------------------------------- |
+| **文档解析与清洗**       | 多格式解析 + 噪声清洗 + 结构化输出      | `src/rag/document_parser.py`                              |
+| **智能分块**             | 固定长度/递归/标题感知分块 + Token 重叠 | `src/rag/chunk_manager.py`                                |
+| **Embedding 与向量索引** | BGE-M3 + Milvus HNSW 索引               | `src/rag/embedding_service.py`, `src/rag/vector_store.py` |
+| **混合检索与重排**       | BM25 + 向量融合 + Cross-Encoder 精排    | `src/rag/retriever.py`, `src/rag/reranker.py`             |
+| **自动化评估**           | RAGAS 一键评估 + 参数自动调优           | `src/rag/evaluator.py`                                    |
+| **Agent 集成**           | RAG 工具封装 + LangGraph 集成           | `src/agents/`                                             |
+
+### 知识重点
+
+1. **文档 ETL 管道**: 多格式解析、清洗、结构化输出，错误日志追踪
+2. **分块策略设计**: 固定长度、递归、标题感知三种策略，Token 重叠保留上下文
+3. **向量检索优化**: HNSW/IVF_FLAT 索引选择，批量插入，连接池管理
+4. **混合检索架构**: BM25 关键词检索 + 向量语义检索融合，Cross-Encoder 精排
+5. **RAG 评估体系**: Faithfulness、Answer Relevance、Context Precision 等核心指标
+6. **参数自动调优**: 网格搜索 + 早停策略，数据驱动寻优
+
+### Reference Links
+
+- [Week 3 详细学习计划](../learning-plan/week3/learning-plan-original.md)
+- [AI SaaS 全景路线图](../learning-plan/ai_saas_learning_plan/overall_learning_plan.md)
+- [LangChain RAG 文档](https://python.langchain.com/docs/use_cases/question_answering/)
+- [Milvus 文档](https://milvus.io/docs/)
+- [RAGAS 文档](https://docs.ragas.io/)
+- [BGE-M3 论文](https://arxiv.org/abs/2402.03216)
