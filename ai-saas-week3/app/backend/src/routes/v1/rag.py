@@ -1,6 +1,6 @@
 import logging
 from typing import List
-from fastapi import APIRouter, File, UploadFile, HTTPException, Form
+from fastapi import APIRouter, File, UploadFile, HTTPException, Form, Request, Query
 import shutil
 import tempfile
 
@@ -115,6 +115,61 @@ async def chunk_document(request: dict):
     }
 
 
+@router.get("/search")
+async def hybrid_search(
+    request: Request,
+    q: str = Query(..., description="查询文本"),
+    top_k: int = Query(10, ge=1, le=100, description="返回结果数量"),
+    vector_top_k: int = Query(50, ge=1, le=200, description="向量召回数量"),
+    text_top_k: int = Query(50, ge=1, le=200, description="文本召回数量"),
+    enable_rerank: bool = Query(True, description="是否启用重排"),
+):
+    """
+    混合检索与重排接口
+
+    返回统一结构:
+    [
+      {
+        "doc_id": "...",
+        "score": 0.95,
+        "content": "...",
+        "source": "...",
+        "rerank_score": 0.95,
+        "vector_score": 0.88,
+        "text_score": 0.0,
+        "metadata": {}
+      }
+    ]
+    """
+    logger.info(
+        f"[RAGAPI] GET /search - q='{q}', top_k={top_k}, vector_top_k={vector_top_k}, text_top_k={text_top_k}, enable_rerank={enable_rerank}"
+    )
+
+    try:
+        hybrid_search_pipeline = request.app.state.hybrid_search
+        results = await hybrid_search_pipeline.search(
+            query=q,
+            top_k=top_k,
+            vector_top_k=vector_top_k,
+            text_top_k=text_top_k,
+            enable_rerank=enable_rerank,
+        )
+        return {
+            "query": q,
+            "total": len(results),
+            "results": [r.to_dict() for r in results],
+        }
+    except Exception as e:
+        logger.error(f"[RAGAPI] Search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/health")
-async def health_check():
-    return {"status": "healthy", "service": "rag"}
+async def health_check(request: Request):
+    try:
+        hybrid_search_pipeline = request.app.state.hybrid_search
+        status = await hybrid_search_pipeline.health_check()
+        status["service"] = "rag"
+        return status
+    except Exception:
+        return {"status": "healthy", "service": "rag"}

@@ -121,12 +121,22 @@ async def lifespan(app: FastAPI):
     # 初始化 RAG 服务
     from src.rag.embedding_service import EmbeddingService
     from src.rag.vector_store import VectorStore
+    from src.rag.hybrid_search import HybridSearchPipeline
 
     app.state.embedding_service = EmbeddingService()
     app.state.vector_store = VectorStore()
 
     # 连接向量数据库
     await app.state.vector_store.connect()
+
+    # 初始化混合检索管道
+    app.state.hybrid_search = HybridSearchPipeline(
+        vector_store=app.state.vector_store,
+        embedding_service=app.state.embedding_service,
+        redis_client=redis_client,
+        rrf_k=60,
+        cache_ttl=3600,
+    )
     logger.info("RAG 服务初始化完成", extra={"request_id": "SYSTEM"})
 
     yield
