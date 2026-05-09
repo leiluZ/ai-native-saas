@@ -328,6 +328,93 @@ cd app/backend
 PYTHONPATH=. python -m src.rag.evaluator --evaluate --report
 ```
 
+### 脚本工具使用
+
+项目提供了多个实用脚本工具，位于 `app/backend/scripts/` 目录：
+
+#### 1. RAGAS 评估脚本 (`ragas_evaluate.py`)
+
+用于自动化评估 RAG 系统性能，支持 Faithfulness、Answer Relevance、Context Precision 等核心指标。
+
+```bash
+cd app/backend/scripts
+
+# 使用 OpenAI（需设置 OPENAI_API_KEY 环境变量）
+python3 ragas_evaluate.py --test-set test_set.json --version 1.0
+
+# 使用本地 vLLM
+python3 ragas_evaluate.py --use-vllm --vllm-url http://localhost:8000/v1 --version 1.0
+
+# 对比两个历史版本
+python3 ragas_evaluate.py --compare 1 2
+```
+
+**参数说明**：
+
+- `--test-set`: 测试集 JSON 文件路径（默认：test_set.json）
+- `--use-vllm`: 使用本地 vLLM 服务
+- `--vllm-url`: vLLM 服务地址（默认：http://localhost:8000/v1）
+- `--version`: 评估版本号（默认：1.0）
+- `--model`: LLM 模型名称（默认：gpt-3.5-turbo）
+- `--compare`: 对比两个版本的评估结果
+
+**功能特性**：
+
+- 自动从 `test_set.json` 加载问题/答案/上下文
+- 支持 OpenAI 和本地 vLLM 两种模式
+- 内置速率限制自动重试机制
+- 输出分数分布、低分样本溯源、改进建议
+- 评估结果自动写入 SQLite 数据库，支持历史版本对比
+
+#### 2. 混合检索基准测试 (`benchmark_hybrid_search.py`)
+
+用于测试和优化混合检索策略的性能。
+
+```bash
+cd app/backend/scripts
+python3 benchmark_hybrid_search.py --collection_name my_collection --query "测试查询"
+```
+
+**参数说明**：
+
+- `--collection_name`: Milvus 集合名称
+- `--query`: 测试查询语句
+- `--top_k`: 返回结果数量（默认：10）
+
+#### 3. 文档解析器测试 (`test_document_parser.py`)
+
+用于测试文档解析器对不同格式文件的解析能力。
+
+```bash
+cd app/backend/scripts
+python3 test_document_parser.py --input_file /path/to/document.pdf --output_file parsed_output.txt
+```
+
+**参数说明**：
+
+- `--input_file`: 输入文档路径（支持 PDF/DOCX/TXT/MD/HTML）
+- `--output_file`: 解析结果输出路径
+
+#### 4. 测试集格式说明 (`test_set.json`)
+
+测试集为 JSON 格式，包含多个测试样本：
+
+```json
+[
+  {
+    "question": "问题文本",
+    "answer": "回答文本",
+    "context": ["上下文片段1", "上下文片段2", "上下文片段3"]
+  }
+]
+```
+
+**字段说明**：
+
+- `question`: 用户问题
+- `answer`: RAG 系统生成的回答
+- `context`: 检索到的上下文片段列表
+
 ### 验收标准
 
 - ✅ 支持 PDF/Word/TXT/Markdown 多格式解析
