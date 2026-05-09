@@ -117,7 +117,21 @@ async def lifespan(app: FastAPI):
     )
     wait_for_database()
     run_alembic_migrations()
+
+    # 初始化 RAG 服务
+    from src.rag.embedding_service import EmbeddingService
+    from src.rag.vector_store import VectorStore
+
+    app.state.embedding_service = EmbeddingService()
+    app.state.vector_store = VectorStore()
+
+    # 连接向量数据库
+    await app.state.vector_store.connect()
+    logger.info("RAG 服务初始化完成", extra={"request_id": "SYSTEM"})
+
     yield
+
+    # 清理资源
     await engine.dispose()
     await redis_client.close()
     logger.info(f"关闭 {settings.app_name}", extra={"request_id": "SYSTEM"})
