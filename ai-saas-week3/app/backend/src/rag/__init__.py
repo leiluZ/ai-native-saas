@@ -3,6 +3,12 @@ from .chunk_manager import ChunkManager
 from .embedding_service import EmbeddingService
 from .vector_store import VectorStore, VectorRecord, SearchResult
 from .schemas import ParsedDocument, ParseError, ChunkResult
+from .hybrid_search import (
+    HybridSearchPipeline,
+    HybridSearchResult,
+    RRFFusion,
+    RerankerClient,
+)
 
 __all__ = [
     "DocumentParser",
@@ -14,4 +20,8 @@ __all__ = [
     "ParsedDocument",
     "ParseError",
     "ChunkResult",
+    "HybridSearchPipeline",
+    "HybridSearchResult",
+    "RRFFusion",
+    "RerankerClient",
 ]
