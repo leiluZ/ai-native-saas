@@ -395,7 +395,61 @@ python3 test_document_parser.py --input_file /path/to/document.pdf --output_file
 - `--input_file`: 输入文档路径（支持 PDF/DOCX/TXT/MD/HTML）
 - `--output_file`: 解析结果输出路径
 
-#### 4. 测试集格式说明 (`test_set.json`)
+#### 4. RAG 参数自动调优器 (`rag_tuner.py`)
+
+用于自动化调优 RAG 系统参数，通过网格搜索和早停策略找到最佳配置。
+
+```bash
+cd app/backend/scripts
+
+# 完整参数网格搜索
+python3 rag_tuner.py --test-set test_set.json --sample-ratio 1.0
+
+# 随机采样 50% 参数组合（降维加速）
+python3 rag_tuner.py --sample-ratio 0.5 --max-workers 3
+
+# 使用本地 vLLM
+python3 rag_tuner.py --use-vllm --vllm-url http://localhost:8000/v1
+```
+
+**参数说明**：
+
+- `--test-set`: 测试集 JSON 文件路径（默认：test_set.json）
+- `--use-vllm`: 使用本地 vLLM 服务
+- `--vllm-url`: vLLM 服务地址（默认：http://localhost:8000/v1）
+- `--sample-ratio`: 参数采样比例 (0.0-1.0)，用于降维加速
+- `--max-workers`: 并发线程数（默认：3）
+- `--early-stop-threshold`: 早停阈值（默认：0.85）
+- `--early-stop-patience`: 连续无提升轮数（默认：2）
+- `--log-file`: 日志输出 CSV 文件（默认：tuning_log.csv）
+- `--config-file`: 最佳配置输出 YAML 文件（默认：best_config.yaml）
+- `--chart-dir`: 图表输出目录（默认：charts/）
+
+**调优参数**：
+
+- `chunk_size`: 分块大小 [256, 512, 768, 1024]
+- `chunk_overlap`: 分块重叠大小 [32, 64, 128]
+- `top_k`: 检索返回数量 [3, 5, 7, 10]
+- `rerank_threshold`: 重排序阈值 [0.5, 0.6, 0.7, 0.8]
+- `similarity_threshold`: 相似度阈值 [0.7, 0.75, 0.8, 0.85]
+
+**目标函数**：
+
+```
+加权综合分 = 0.4 * faithfulness + 0.4 * relevance + 0.2 * precision
+```
+
+**功能特性**：
+
+- 使用 `itertools.product` 进行参数网格遍历
+- 支持随机采样降维加速搜索
+- 并发执行多组配置（默认 3 组）
+- 日志记录至 CSV（含耗时/显存/分数）
+- 早停策略：达到阈值或连续 2 轮无提升则停止
+- 输出最佳配置 YAML
+- 生成分数分布、对比图表（matplotlib）
+
+#### 5. 测试集格式说明 (`test_set.json`)
 
 测试集为 JSON 格式，包含多个测试样本：
 
