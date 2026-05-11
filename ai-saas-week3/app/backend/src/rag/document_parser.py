@@ -226,7 +226,10 @@ class DocumentParser:
             log_path = Path(tempfile.gettempdir()) / "rag_error_log.json"
             with open(log_path, "w", encoding="utf-8") as f:
                 json.dump(
-                    [e.dict() for e in self.error_log], f, ensure_ascii=False, indent=2
+                    [e.model_dump() for e in self.error_log],
+                    f,
+                    ensure_ascii=False,
+                    indent=2,
                 )
             logger.debug(f"[DocumentParser] Error log saved to '{log_path}'")
         except Exception as e:

@@ -28,6 +28,12 @@ from src.agents.langgraph_chat_agent import (
     get_execution_trace,
     generate_mermaid_sequence,
 )
+from src.agents.langgraph_rag_agent import (
+    run_rag_agent,
+    run_rag_agent_stream,
+    get_rag_session_info,
+    get_execution_trace as get_rag_execution_trace,
+)
 from src.utils.session_memory import SessionMemoryManager
 from src.utils.circuit_breaker import global_circuit_breaker, CircuitBreakerError
 
@@ -524,3 +530,179 @@ async def get_langgraph_mermaid(
     return ResponseBase(
         code=200, message="success", data=mermaid_code, request_id=request_id
     )
+
+
+@router.post(
+    "/rag/execute",
+    summary="使用 RAG Agent 执行知识检索",
+    description="使用 LangGraph RAG Agent 进行知识库检索问答，支持流式输出",
+    response_model=ResponseBase,
+)
+async def chat_with_rag_agent(
+    request: Request,
+    agent_request: AgentRequest,
+):
+    """
+    使用 RAG Agent 执行知识检索问答
+
+    状态机流程：
+    START → analyze → [rag_tool if knowledge] → response → END
+
+    - 知识型问题自动调用 rag_search 工具检索知识库
+    - 闲聊/计算问题直接回答
+    - 返回结果强制附加引用 ID，缺失引用时标记置信度 low
+
+    Args:
+        request: FastAPI 请求对象
+        agent_request: 聊天请求
+
+    Returns:
+        包含响应内容、引用和置信度的结构化结果
+    """
+    request_id = request.state.request_id
+    thread_id = agent_request.session_id or str(uuid4())
+
+    logger.info(
+        f"[ChatAPI] POST /rag/execute - prompt='{agent_request.prompt}', thread_id='{thread_id}'"
+    )
+
+    try:
+        result = await run_rag_agent(agent_request.prompt, thread_id)
+
+        final_response = result.get("final_response", "")
+        rag_confidence = result.get("rag_confidence", "low")
+        rag_references = result.get("rag_references", [])
+
+        logger.info(
+            f"[ChatAPI] RAG Agent result: confidence={rag_confidence}, references={len(rag_references)}"
+        )
+
+        return ResponseBase(
+            code=200,
+            message="success",
+            data={
+                "prompt": agent_request.prompt,
+                "response": final_response,
+                "session_id": thread_id,
+                "confidence": rag_confidence,
+                "references": rag_references,
+            },
+            request_id=request_id,
+        )
+
+    except Exception as e:
+        logger.error(f"[ChatAPI] RAG Agent error: {str(e)}")
+        return ResponseBase(
+            code=500,
+            message=f"RAG Agent 执行失败: {str(e)}",
+            data=None,
+            request_id=request_id,
+        )
+
+
+@router.post(
+    "/rag/execute/stream",
+    summary="使用 RAG Agent 流式执行知识检索",
+    description="使用 LangGraph RAG Agent 进行流式知识库检索问答",
+    response_model=ResponseBase,
+)
+async def chat_with_rag_agent_stream(
+    request: Request,
+    agent_request: AgentRequest,
+):
+    """
+    使用 RAG Agent 流式执行知识检索问答
+
+    返回 SSE (Server-Sent Events) 流式响应，每个 chunk 包含节点名称和状态信息。
+
+    Args:
+        request: FastAPI 请求对象
+        agent_request: 聊天请求
+
+    Returns:
+        SSE 流式响应
+    """
+    from fastapi.responses import StreamingResponse
+    import json
+
+    request_id = request.state.request_id
+    thread_id = agent_request.session_id or str(uuid4())
+
+    logger.info(
+        f"[ChatAPI] POST /rag/execute/stream - prompt='{agent_request.prompt}', thread_id='{thread_id}'"
+    )
+
+    async def event_generator():
+        try:
+            async for chunk in run_rag_agent_stream(agent_request.prompt, thread_id):
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            logger.error(f"[ChatAPI] RAG Agent stream error: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Request-ID": request_id,
+        },
+    )
+
+
+@router.get(
+    "/rag/sessions/{thread_id}",
+    summary="查询 RAG Agent 会话信息",
+    description="查询指定线程的 RAG Agent 会话状态",
+    response_model=ResponseBase,
+)
+async def get_rag_session(
+    request: Request,
+    thread_id: str,
+):
+    """
+    查询 RAG Agent 会话信息
+
+    Args:
+        request: FastAPI 请求对象
+        thread_id: 线程ID
+
+    Returns:
+        会话状态信息
+    """
+    request_id = request.state.request_id
+
+    session_info = await get_rag_session_info(thread_id)
+
+    return ResponseBase(
+        code=200, message="success", data=session_info, request_id=request_id
+    )
+
+
+@router.get(
+    "/rag/sessions/{thread_id}/trace",
+    summary="获取 RAG Agent 执行轨迹",
+    description="获取指定线程的 RAG Agent 执行轨迹",
+    response_model=ResponseBase,
+)
+async def get_rag_execution_trace_endpoint(
+    request: Request,
+    thread_id: str,
+):
+    """
+    获取 RAG Agent 执行轨迹
+
+    Args:
+        request: FastAPI 请求对象
+        thread_id: 线程ID
+
+    Returns:
+        执行轨迹列表
+    """
+    request_id = request.state.request_id
+
+    trace = get_rag_execution_trace(thread_id)
+
+    return ResponseBase(code=200, message="success", data=trace, request_id=request_id)

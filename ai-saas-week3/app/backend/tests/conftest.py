@@ -3,6 +3,8 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock
 from langchain_core.language_models import BaseChatModel
 
+collect_ignore = ["fixtures"]
+
 
 @pytest.fixture
 def mock_llm():

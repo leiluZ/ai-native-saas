@@ -6,7 +6,6 @@ from sqlalchemy import text
 import redis.asyncio as redis
 from src.schemas.common import ResponseBase
 from src.dependencies import get_db, get_redis
-from src.agents.langgraph_chat_agent import run_langgraph
 
 router = APIRouter(prefix="/health", tags=["健康检查"])
 
@@ -34,14 +33,16 @@ async def health_check(
         redis_status = f"unhealthy: {str(e)}"
 
     # 验证 LangGraph 状态机（迁移要求）
-    try:
-        result = await run_langgraph("health check", "health-check-thread")
-        if "final_response" in result:
-            state_machine_status = "healthy"
-        else:
-            state_machine_status = "unhealthy: no response"
-    except Exception as e:
-        state_machine_status = f"unhealthy: {str(e)}"
+    # comment out for now to stop LLM call
+    state_machine_status = "healthy (skipped)"
+    # try:
+    #    result = await run_langgraph("health check", "health-check-thread")
+    #    if "final_response" in result:
+    #        state_machine_status = "healthy"
+    #    else:
+    #        state_machine_status = "unhealthy: no response"
+    # except Exception as e:
+    #    state_machine_status = f"unhealthy: {str(e)}"
 
     return ResponseBase(
         code=200,

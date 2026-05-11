@@ -142,4 +142,5 @@ class TestTools:
         assert tool_registry.has_tool("get_weather")
         assert tool_registry.has_tool("get_current_time")
         assert tool_registry.has_tool("calculate")
-        assert len(tool_registry.list_tools()) == 3
+        assert tool_registry.has_tool("rag_search")
+        assert len(tool_registry.list_tools()) == 4

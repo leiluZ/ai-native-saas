@@ -10,6 +10,11 @@ import {
   ChevronUp,
   AlertCircle,
   CheckCircle,
+  MessageCircle,
+  Send,
+  Loader2,
+  BookOpen,
+  Zap,
 } from "lucide-react";
 
 interface ParsedDocument {
@@ -47,18 +52,32 @@ interface RAGResult {
   errors: ErrorInfo[];
 }
 
+interface ChatMessage {
+  id: string;
+  content: string;
+  role: "user" | "assistant";
+  confidence?: string;
+  references?: string[];
+  timestamp: Date;
+}
+
 export const RAGPanel: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
   const [textInput, setTextInput] = useState("");
   const [chunkSize, setChunkSize] = useState(512);
   const [overlapRatio, setOverlapRatio] = useState(15);
-  const [strategy, setStrategy] = useState<"fixed" | "recursive" | "header_aware">(
-    "recursive"
-  );
+  const [strategy, setStrategy] = useState<
+    "fixed" | "recursive" | "header_aware"
+  >("recursive");
   const [results, setResults] = useState<RAGResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"upload" | "text">("upload");
+  // Q&A related state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [questionInput, setQuestionInput] = useState("");
+  const [isAnswering, setIsAnswering] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -80,6 +99,8 @@ export const RAGPanel: React.FC = () => {
 
     setLoading(true);
     try {
+      let parseResult: RAGResult | null = null;
+
       if (activeTab === "upload" && files.length > 0) {
         const formData = new FormData();
         files.forEach((file) => formData.append("files", file));
@@ -88,22 +109,26 @@ export const RAGPanel: React.FC = () => {
         formData.append("chunk_strategy", strategy);
 
         const response = await fetch(
-          `${import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"}/rag/parse`,
+          `${
+            import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+          }/rag/parse`,
           {
             method: "POST",
             body: formData,
-          }
+          },
         );
 
         if (response.ok) {
           const data = await response.json();
-          setResults(data);
+          parseResult = data;
         } else {
           console.error("Failed to parse documents");
         }
       } else if (activeTab === "text" && textInput.trim()) {
         const response = await fetch(
-          `${import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"}/rag/chunk`,
+          `${
+            import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+          }/rag/chunk`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -114,12 +139,12 @@ export const RAGPanel: React.FC = () => {
               overlap_ratio: overlapRatio / 100,
               strategy,
             }),
-          }
+          },
         );
 
         if (response.ok) {
           const data = await response.json();
-          setResults({
+          parseResult = {
             success_count: 1,
             error_count: 0,
             documents: [
@@ -135,10 +160,51 @@ export const RAGPanel: React.FC = () => {
               },
             ],
             errors: [],
-          });
+          };
         } else {
           console.error("Failed to chunk text");
         }
+      }
+
+      // 自动索引到向量数据库
+      if (parseResult && parseResult.documents.length > 0) {
+        for (const doc of parseResult.documents) {
+          if (doc.chunks && doc.chunks.length > 0) {
+            const indexResponse = await fetch(
+              `${
+                import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+              }/rag/index`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  source: doc.metadata.source,
+                  chunks: doc.chunks.map((c) => ({
+                    content: c.content,
+                    metadata: {
+                      source: doc.metadata.source,
+                      chunk_index: c.id,
+                      token_count: c.token_count,
+                    },
+                  })),
+                }),
+              },
+            );
+
+            if (indexResponse.ok) {
+              const indexData = await indexResponse.json();
+              console.log(
+                `[Index] ${doc.metadata.source}: ${indexData.chunks_indexed} chunks indexed`,
+              );
+            } else {
+              console.error(`[Index] Failed to index ${doc.metadata.source}`);
+            }
+          }
+        }
+      }
+
+      if (parseResult) {
+        setResults(parseResult);
       }
     } catch (error) {
       console.error("Error:", error);
@@ -149,6 +215,118 @@ export const RAGPanel: React.FC = () => {
 
   const toggleDoc = (source: string) => {
     setExpandedDoc(expandedDoc === source ? null : source);
+  };
+
+  const askQuestion = async () => {
+    if (!questionInput.trim() || !results) return;
+
+    setIsAnswering(true);
+
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      content: questionInput,
+      role: "user",
+      timestamp: new Date(),
+    };
+    setChatMessages((prev) => [...prev, userMessage]);
+
+    try {
+      const response = await fetch(
+        `${
+          import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+        }/chat/rag/execute`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: questionInput,
+            session_id: sessionId || undefined,
+          }),
+        },
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (!sessionId) {
+          setSessionId(data.data.session_id);
+        }
+
+        // 解析后端返回的 JSON 字符串
+        let responseContent = data.data.response;
+        let responseConfidence = data.data.confidence;
+        let responseReferences = data.data.references;
+
+        try {
+          const parsedResponse = JSON.parse(data.data.response);
+          responseContent = parsedResponse.answer || data.data.response;
+          // 优先使用 JSON 中的 confidence，如果不存在则使用路由返回的
+          responseConfidence =
+            parsedResponse.confidence || data.data.confidence;
+          responseReferences =
+            parsedResponse.references || data.data.references;
+        } catch (e) {
+          // 如果不是 JSON 格式，直接使用原始响应
+          console.log("Response is not JSON, using raw response");
+        }
+
+        const assistantMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          content: responseContent,
+          role: "assistant",
+          confidence: responseConfidence,
+          references: responseReferences,
+          timestamp: new Date(),
+        };
+        setChatMessages((prev) => [...prev, assistantMessage]);
+      } else {
+        console.error("Failed to get answer");
+        const errorMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          content: "抱歉，无法获取答案，请稍后重试。",
+          role: "assistant",
+          timestamp: new Date(),
+        };
+        setChatMessages((prev) => [...prev, errorMessage]);
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        content: "连接错误，请检查后端服务是否运行。",
+        role: "assistant",
+        timestamp: new Date(),
+      };
+      setChatMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsAnswering(false);
+      setQuestionInput("");
+    }
+  };
+
+  const getConfidenceColor = (confidence?: string) => {
+    switch (confidence) {
+      case "high":
+        return "bg-green-100 text-green-700 border-green-300";
+      case "medium":
+        return "bg-yellow-100 text-yellow-700 border-yellow-300";
+      case "low":
+        return "bg-red-100 text-red-700 border-red-300";
+      default:
+        return "bg-gray-100 text-gray-700 border-gray-300";
+    }
+  };
+
+  const getConfidenceLabel = (confidence?: string) => {
+    switch (confidence) {
+      case "high":
+        return "高置信度";
+      case "medium":
+        return "中置信度";
+      case "low":
+        return "低置信度";
+      default:
+        return "未知";
+    }
   };
 
   return (
@@ -244,7 +422,9 @@ export const RAGPanel: React.FC = () => {
               <select
                 value={strategy}
                 onChange={(e) =>
-                  setStrategy(e.target.value as "fixed" | "recursive" | "header_aware")
+                  setStrategy(
+                    e.target.value as "fixed" | "recursive" | "header_aware",
+                  )
                 }
                 className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
@@ -362,7 +542,9 @@ export const RAGPanel: React.FC = () => {
               <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                 <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
                 <p>No results yet</p>
-                <p className="text-sm mt-2">Upload files or enter text and click Execute</p>
+                <p className="text-sm mt-2">
+                  Upload files or enter text and click Execute
+                </p>
               </div>
             ) : (
               <div>
@@ -375,7 +557,9 @@ export const RAGPanel: React.FC = () => {
                         {results.success_count}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Success</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Success
+                    </p>
                   </div>
                   <div className="flex-1 bg-red-50 dark:bg-red-900/30 rounded-lg p-4">
                     <div className="flex items-center text-red-600 dark:text-red-400">
@@ -384,7 +568,9 @@ export const RAGPanel: React.FC = () => {
                         {results.error_count}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Errors</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Errors
+                    </p>
                   </div>
                 </div>
 
@@ -469,7 +655,8 @@ export const RAGPanel: React.FC = () => {
                               </div>
                               <div className="bg-yellow-50 dark:bg-yellow-900/30 rounded-lg p-3 text-center">
                                 <div className="text-lg font-bold text-yellow-600 dark:text-yellow-400">
-                                  {doc.chunk_stats.min_tokens}-{doc.chunk_stats.max_tokens}
+                                  {doc.chunk_stats.min_tokens}-
+                                  {doc.chunk_stats.max_tokens}
                                 </div>
                                 <div className="text-xs text-gray-600 dark:text-gray-400">
                                   Min-Max
@@ -534,6 +721,134 @@ export const RAGPanel: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* Q&A Panel */}
+      <div className="mt-8">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+            <MessageCircle className="w-5 h-5 mr-2 text-blue-500" />
+            Knowledge Base Q&A
+            <Zap className="w-4 h-4 ml-2 text-yellow-500" />
+          </h2>
+
+          {/* Chat Messages */}
+          <div className="space-y-4 mb-4 max-h-64 overflow-y-auto">
+            {!results ? (
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                <BookOpen className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                <p>请先上传文档并执行 RAG Pipeline</p>
+                <p className="text-sm mt-1">
+                  上传文件或输入文本，点击 "Execute RAG Pipeline" 按钮
+                </p>
+              </div>
+            ) : chatMessages.length === 0 ? (
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                <BookOpen className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                <p>开始与知识库对话</p>
+                <p className="text-sm mt-1">基于上传的文档提问</p>
+              </div>
+            ) : (
+              chatMessages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`flex ${
+                    message.role === "user" ? "justify-end" : "justify-start"
+                  }`}
+                >
+                  <div
+                    className={`max-w-[80%] rounded-lg px-4 py-3 ${
+                      message.role === "user"
+                        ? "bg-blue-500 text-white rounded-br-md"
+                        : "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-md"
+                    }`}
+                  >
+                    <p className="text-sm whitespace-pre-wrap">
+                      {message.content}
+                    </p>
+                    {message.role === "assistant" &&
+                      (message.confidence || message.references?.length) && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {message.confidence && (
+                            <span
+                              className={`text-xs px-2 py-1 rounded-full border ${getConfidenceColor(
+                                message.confidence,
+                              )}`}
+                            >
+                              {getConfidenceLabel(message.confidence)}
+                            </span>
+                          )}
+                          {message.references?.length &&
+                            message.references.length > 0 && (
+                              <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 border border-blue-300">
+                                {message.references.length} 个引用
+                              </span>
+                            )}
+                        </div>
+                      )}
+                    {message.references?.length &&
+                      message.references.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                            引用来源:
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {message.references.slice(0, 5).map((ref, idx) => (
+                              <span
+                                key={idx}
+                                className="text-xs px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300"
+                              >
+                                {ref}
+                              </span>
+                            ))}
+                            {message.references.length > 5 && (
+                              <span className="text-xs text-gray-500">
+                                +{message.references.length - 5}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Input Area */}
+          <div className="flex gap-3">
+            <input
+              type="text"
+              value={questionInput}
+              onChange={(e) => setQuestionInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && askQuestion()}
+              placeholder="基于文档内容提问..."
+              disabled={isAnswering}
+              className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            />
+            <button
+              onClick={askQuestion}
+              disabled={!questionInput.trim() || isAnswering}
+              className={`px-6 py-3 rounded-lg font-medium flex items-center gap-2 transition-colors ${
+                !questionInput.trim() || isAnswering
+                  ? "bg-gray-300 dark:bg-gray-600 text-gray-500 cursor-not-allowed"
+                  : "bg-green-500 hover:bg-green-600 text-white"
+              }`}
+            >
+              {isAnswering ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Thinking...
+                </>
+              ) : (
+                <>
+                  <Send className="w-5 h-5" />
+                  Ask
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>

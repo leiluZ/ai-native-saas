@@ -5,7 +5,7 @@ import json
 import re
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import redis.asyncio as redis
 
 logger = logging.getLogger(__name__)
@@ -438,5 +438,5 @@ class HybridSearchPipeline:
             "vector_store": "healthy" if vector_ok else "unhealthy",
             "redis": "healthy" if redis_ok else "unhealthy",
             "reranker": "configured",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
