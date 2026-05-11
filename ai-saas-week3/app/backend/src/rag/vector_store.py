@@ -186,7 +186,10 @@ class VectorStore:
 
     async def _insert_batch(self, records: List[VectorRecord]):
         """插入单个批次"""
-        if hasattr(self._client, "insert"):
+        if isinstance(self._client, InMemoryVectorStore):
+            # In-memory store
+            await self._client.insert(records)
+        else:
             # Milvus client
             data = [
                 {
@@ -198,9 +201,6 @@ class VectorStore:
                 for r in records
             ]
             self._client.insert(collection_name=self.collection_name, data=data)
-        else:
-            # In-memory store
-            await self._client.insert(records)
 
     async def search(
         self,
@@ -227,7 +227,9 @@ class VectorStore:
         )
 
         try:
-            if hasattr(self._client, "search"):
+            if hasattr(self._client, "search") and hasattr(
+                self._client, "has_collection"
+            ):
                 # Milvus client
                 results = self._client.search(
                     collection_name=self.collection_name,
@@ -316,9 +318,10 @@ class InMemoryVectorStore:
         self.dimension = dimension
         self.records: Dict[str, VectorRecord] = {}
 
-    async def insert(self, records: List[VectorRecord]):
+    async def insert(self, records: List[VectorRecord]) -> Dict[str, Any]:
         for record in records:
             self.records[record.id] = record
+        return {"inserted": len(records), "errors": 0}
 
     async def search(
         self,

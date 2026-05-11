@@ -4,7 +4,7 @@ from fastapi import APIRouter, File, UploadFile, HTTPException, Form, Request, Q
 import shutil
 import tempfile
 
-from src.rag import DocumentParser, ChunkManager
+from src.rag import DocumentParser, ChunkManager, VectorRecord
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +113,84 @@ async def chunk_document(request: dict):
         "chunks": [c.dict() for c in chunks],
         "stats": stats,
     }
+
+
+@router.post("/index", response_model=dict)
+async def index_document(
+    request: Request,
+    doc_request: dict,
+):
+    """
+    将文档 chunks 存入向量数据库
+
+    Args:
+        doc_request: {
+            "chunks": [{"content": "...", "metadata": {...}}],
+            "source": "document_name"
+        }
+
+    Returns:
+        索引结果统计
+    """
+    chunks = doc_request.get("chunks", [])
+    source = doc_request.get("source", "unknown")
+
+    if not chunks:
+        raise HTTPException(status_code=400, detail="No chunks provided")
+
+    logger.info(f"[RAGAPI] POST /index - chunks={len(chunks)}, source='{source}'")
+
+    try:
+        embedding_service = request.app.state.embedding_service
+        vector_store = request.app.state.vector_store
+
+        # 1. 准备文本和元数据
+        texts = []
+        metadata_list = []
+        for i, chunk in enumerate(chunks):
+            content = chunk.get("content", "")
+            meta = chunk.get("metadata", {})
+            meta["source"] = source
+            meta["chunk_index"] = i
+            texts.append(content)
+            metadata_list.append(meta)
+
+        # 2. 生成向量
+        logger.info(f"[RAGAPI] Encoding {len(texts)} chunks...")
+        vectors = await embedding_service.encode(texts)
+        if vectors.ndim == 1:
+            vectors = vectors.reshape(1, -1)
+
+        # 3. 创建 VectorRecord 列表
+        records = []
+        for i, (vector, text, meta) in enumerate(zip(vectors, texts, metadata_list)):
+            record = VectorRecord(
+                id=f"{source}_{i}_{hash(text) % 10000}",
+                vector=vector,
+                text=text,
+                metadata=meta,
+            )
+            records.append(record)
+
+        # 4. 存入向量数据库
+        result = await vector_store.insert(records)
+
+        logger.info(
+            f"[RAGAPI] Index complete - inserted={result.get('inserted', 0)}, "
+            f"errors={result.get('errors', 0)}"
+        )
+
+        return {
+            "success": True,
+            "source": source,
+            "chunks_indexed": len(records),
+            "inserted": result.get("inserted", 0),
+            "errors": result.get("errors", 0),
+        }
+
+    except Exception as e:
+        logger.error(f"[RAGAPI] Index error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"索引失败: {str(e)}")
 
 
 @router.get("/search")

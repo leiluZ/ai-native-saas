@@ -3,6 +3,8 @@
 from langchain.tools import tool
 from typing import Dict, Callable, Any, Optional
 from datetime import datetime
+from .rag_tool import rag_search_tool
+
 import math
 import pytz
 
@@ -150,3 +152,4 @@ def calculate(expression: str) -> str:
 tool_registry.register_tool("get_weather", get_weather)
 tool_registry.register_tool("get_current_time", get_current_time)
 tool_registry.register_tool("calculate", calculate)
+tool_registry.register_tool("rag_search", rag_search_tool)
