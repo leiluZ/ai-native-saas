@@ -3,8 +3,7 @@ import pytest
 import numpy as np
 from unittest.mock import patch, MagicMock
 
-from app.src.rag.vector_store import VectorStore, VectorRecord, SearchResult
-from app.src.rag.in_memory_store import InMemoryVectorStore
+from src.rag.vector_store import VectorStore, VectorRecord, SearchResult, InMemoryVectorStore
 
 
 class TestMilvusIntegration:
