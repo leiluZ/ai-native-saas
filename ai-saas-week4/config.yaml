@@ -1,0 +1,14 @@
+engine: vllm
+base_url: http://localhost:8000
+
+vllm_url: http://localhost:8000
+ollama_url: http://localhost:11434
+
+prompt_length: all
+total_requests: 100
+concurrency: 10
+max_tokens: 512
+timeout: 300
+max_retries: 3
+
+output: ./benchmark_results
