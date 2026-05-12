@@ -12,7 +12,7 @@ class TestVectorStore:
     async def test_in_memory_insert_and_search(self):
         """测试 InMemoryVectorStore 的插入和搜索功能"""
         # 创建 InMemory 存储
-        in_memory_store = InMemoryVectorStore()
+        in_memory_store = InMemoryVectorStore(dimension=4)
 
         # 创建测试数据
         records = [
@@ -46,58 +46,57 @@ class TestVectorStore:
     @pytest.mark.asyncio
     async def test_milvus_insert_and_search(self):
         """测试 MilvusVectorStore 的插入和搜索功能（使用 mock）"""
-        with patch("app.src.rag.vector_store.MilvusClient") as MockMilvusClient:
-            # 创建 mock 客户端
-            mock_client = MockMilvusClient.return_value
-            mock_client.has_collection.return_value = True
-            mock_client.insert.return_value = {"insert_count": 1}
+        # 创建 mock 客户端
+        mock_client = MagicMock()
+        mock_client.has_collection.return_value = True
+        mock_client.insert.return_value = {"insert_count": 1}
 
-            # 设置搜索返回结果
-            mock_client.search.return_value = [
-                [{
-                    "id": "test1",
-                    "distance": 0.1,
-                    "entity": {"text": "测试文档内容", "metadata": {"source": "test.txt"}}
-                }]
-            ]
+        # 设置搜索返回结果
+        mock_client.search.return_value = [
+            [{
+                "id": "test1",
+                "distance": 0.1,
+                "entity": {"text": "测试文档内容", "metadata": {"source": "test.txt"}}
+            }]
+        ]
 
-            # 创建向量存储
-            store = VectorStore(collection_name="test_collection")
-            store._client = mock_client
+        # 创建向量存储
+        store = VectorStore(collection_name="test_collection")
+        store._client = mock_client
 
-            # 创建测试数据
-            records = [
-                VectorRecord(
-                    id="test1",
-                    vector=np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float64),  # 使用 float64
-                    text="测试文档内容",
-                    metadata={"source": "test.txt"}
-                )
-            ]
+        # 创建测试数据
+        records = [
+            VectorRecord(
+                id="test1",
+                vector=np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float64),  # 使用 float64
+                text="测试文档内容",
+                metadata={"source": "test.txt"}
+            )
+        ]
 
-            # 测试插入 - 验证向量被转换为 float32
-            await store._insert_batch(records)
+        # 测试插入 - 验证向量被转换为 float32
+        await store._insert_batch(records)
 
-            # 验证插入调用
-            inserted_data = mock_client.insert.call_args[1]["data"][0]
-            # 验证向量是 float32 类型
-            assert all(isinstance(v, np.float32) or isinstance(v, float) and v == float(np.float32(v))
-                      for v in inserted_data["vector"])
+        # 验证插入调用
+        inserted_data = mock_client.insert.call_args[1]["data"][0]
+        # 验证向量是 float32 类型
+        assert all(isinstance(v, np.float32) or isinstance(v, float) and v == float(np.float32(v))
+                  for v in inserted_data["vector"])
 
-            # 测试搜索 - 验证查询向量被转换为 float32
-            query_vector = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float64)
-            results = await store.search(query_vector, top_k=1)
+        # 测试搜索 - 验证查询向量被转换为 float32
+        query_vector = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float64)
+        results = await store.search(query_vector, top_k=1)
 
-            # 验证搜索调用
-            search_data = mock_client.search.call_args[1]["data"][0]
-            # 验证查询向量是 float32 类型
-            assert all(isinstance(v, np.float32) or isinstance(v, float) and v == float(np.float32(v))
-                      for v in search_data)
+        # 验证搜索调用
+        search_data = mock_client.search.call_args[1]["data"][0]
+        # 验证查询向量是 float32 类型
+        assert all(isinstance(v, np.float32) or isinstance(v, float) and v == float(np.float32(v))
+                  for v in search_data)
 
-            assert len(results) == 1
-            assert results[0].id == "test1"
-            assert results[0].text == "测试文档内容"
-            assert results[0].distance == 0.1
+        assert len(results) == 1
+        assert results[0].id == "test1"
+        assert results[0].text == "测试文档内容"
+        assert results[0].distance == 0.1
 
     @pytest.mark.asyncio
     async def test_vector_type_conversion(self):
