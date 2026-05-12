@@ -8,7 +8,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: process.env.E2E_BASE_URL || "http://localhost:3000",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -18,10 +18,22 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  webServer: {
-    command: "npm run dev",
-    url: "http://localhost:3000",
-    reuseExistingServer: true,
-    timeout: 120 * 1000,
-  },
+  webServer: [
+    {
+      command:
+        "cd ../backend && PYTHONPATH=. uvicorn src.main:app --host 0.0.0.0 --port 8000",
+      url: "http://localhost:8000/api/v1/health",
+      reuseExistingServer: true,
+      timeout: 120 * 1000,
+    },
+    {
+      command: "npm run dev",
+      url: "http://localhost:3000",
+      reuseExistingServer: true,
+      timeout: 120 * 1000,
+      env: {
+        REACT_APP_API_URL: "http://localhost:8000/api/v1",
+      },
+    },
+  ],
 });

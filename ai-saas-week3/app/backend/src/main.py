@@ -122,6 +122,7 @@ async def lifespan(app: FastAPI):
     from src.rag.embedding_service import EmbeddingService
     from src.rag.vector_store import VectorStore
     from src.rag.hybrid_search import HybridSearchPipeline
+    from src.agents.rag_tool import set_rag_services
 
     app.state.embedding_service = EmbeddingService()
     app.state.vector_store = VectorStore()
@@ -137,6 +138,9 @@ async def lifespan(app: FastAPI):
         rrf_k=60,
         cache_ttl=3600,
     )
+
+    # 设置 RAG 服务到 rag_tool 模块，供 LangGraph agent 使用
+    set_rag_services(app.state.embedding_service, app.state.vector_store)
     logger.info("RAG 服务初始化完成", extra={"request_id": "SYSTEM"})
 
     yield
