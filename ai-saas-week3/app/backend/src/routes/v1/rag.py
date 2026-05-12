@@ -1,6 +1,15 @@
 import logging
 from typing import List
-from fastapi import APIRouter, File, UploadFile, HTTPException, Form, Request, Query
+from fastapi import (
+    APIRouter,
+    File,
+    UploadFile,
+    HTTPException,
+    Form,
+    Request,
+    Query,
+    Body,
+)
 import shutil
 import tempfile
 
@@ -59,7 +68,7 @@ async def parse_document(
                             or "application/octet-stream",
                             "parsed_at": result.metadata.get("parsed_at", ""),
                         },
-                        "chunks": [c.dict() for c in chunks],
+                        "chunks": [c.model_dump() for c in chunks],
                         "chunk_stats": stats,
                     }
                 )
@@ -87,7 +96,7 @@ async def parse_document(
 
 
 @router.post("/chunk", response_model=dict)
-async def chunk_document(request: dict):
+async def chunk_document(request: dict = Body(...)):
     content = request.get("content", "")
     strategy = request.get("strategy", "recursive")
     chunk_size = request.get("chunk_size", 512)
@@ -110,7 +119,7 @@ async def chunk_document(request: dict):
     )
 
     return {
-        "chunks": [c.dict() for c in chunks],
+        "chunks": [c.model_dump() for c in chunks],
         "stats": stats,
     }
 
@@ -118,7 +127,7 @@ async def chunk_document(request: dict):
 @router.post("/index", response_model=dict)
 async def index_document(
     request: Request,
-    doc_request: dict,
+    doc_request: dict = Body(...),
 ):
     """
     将文档 chunks 存入向量数据库
