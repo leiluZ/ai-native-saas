@@ -37,7 +37,7 @@ class VectorStore:
         dimension: int = 1024,
         index_type: str = "HNSW",
         metric_type: str = "L2",
-        host: str = "localhost",
+        host: str = "milvus",
         port: int = 19530,
     ):
         self.collection_name = collection_name
@@ -194,7 +194,7 @@ class VectorStore:
             data = [
                 {
                     "id": r.id,
-                    "vector": r.vector.tolist(),
+                    "vector": r.vector.astype(np.float32).tolist(),
                     "text": r.text,
                     "metadata": r.metadata,
                 }
@@ -231,11 +231,15 @@ class VectorStore:
                 self._client, "has_collection"
             ):
                 # Milvus client
+                # 确保查询向量是 float32 类型
+                query_data = query_vector.astype(np.float32).tolist()
+
                 results = self._client.search(
                     collection_name=self.collection_name,
-                    data=[query_vector.tolist()],
+                    data=[query_data],
                     limit=top_k,
                     output_fields=["id", "text", "metadata"],
+                    anns_field="vector",  # 指定向量字段
                     filter=(
                         self._build_filter(metadata_filter) if metadata_filter else None
                     ),

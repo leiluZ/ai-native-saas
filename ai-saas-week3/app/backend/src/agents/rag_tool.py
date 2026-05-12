@@ -78,7 +78,11 @@ def _build_rag_search_tool():
                     references=[],
                 ).model_dump_json()
 
-            query_vector = await embedding_service.encode(query)
+            query_vectors = await embedding_service.encode(query)
+            # 确保是一维向量 (1024,)
+            query_vector = (
+                query_vectors[0] if len(query_vectors.shape) > 1 else query_vectors
+            )
 
             search_results = await vector_store.search(
                 query_vector=query_vector,
