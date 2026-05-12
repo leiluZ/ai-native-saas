@@ -42,6 +42,18 @@ class RagSearchResponse(BaseModel):
     references: List[str] = Field(default_factory=list, description="引用 ID 列表")
 
 
+# Global references for services
+_embedding_service = None
+_vector_store = None
+
+
+def set_rag_services(embedding_service, vector_store):
+    """Set the RAG services globally for use in the tool"""
+    global _embedding_service, _vector_store
+    _embedding_service = embedding_service
+    _vector_store = vector_store
+
+
 def _build_rag_search_tool():
     @tool(args_schema=RagSearchInput)
     async def rag_search(
@@ -63,13 +75,14 @@ def _build_rag_search_tool():
         Returns:
             JSON 格式的搜索结果，包含文档内容、来源引用和置信度
         """
-        try:
-            from src.main import app as fastapi_app
+        global _embedding_service, _vector_store
 
-            embedding_service = getattr(fastapi_app.state, "embedding_service", None)
-            vector_store = getattr(fastapi_app.state, "vector_store", None)
+        try:
+            embedding_service = _embedding_service
+            vector_store = _vector_store
 
             if embedding_service is None or vector_store is None:
+                logger.error("[rag_search] RAG services not initialized")
                 return RagSearchResponse(
                     query=query,
                     results=[],
@@ -78,7 +91,11 @@ def _build_rag_search_tool():
                     references=[],
                 ).model_dump_json()
 
-            query_vector = await embedding_service.encode(query)
+            query_vectors = await embedding_service.encode(query)
+            # 确保是一维向量 (1024,)
+            query_vector = (
+                query_vectors[0] if len(query_vectors.shape) > 1 else query_vectors
+            )
 
             search_results = await vector_store.search(
                 query_vector=query_vector,
@@ -125,16 +142,6 @@ def _build_rag_search_tool():
             )
 
             return response.model_dump_json()
-
-        except ImportError as e:
-            logger.warning(f"[rag_search] RAG 服务未初始化: {str(e)}")
-            return RagSearchResponse(
-                query=query,
-                results=[],
-                total_found=0,
-                confidence="low",
-                references=[],
-            ).model_dump_json()
 
         except asyncio.TimeoutError:
             logger.error(f"[rag_search] 搜索超时 - query='{query}'")

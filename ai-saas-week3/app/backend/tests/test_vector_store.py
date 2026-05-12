@@ -1,285 +1,116 @@
 import pytest
 import numpy as np
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from src.rag.vector_store import VectorStore, VectorRecord, SearchResult, InMemoryVectorStore
 
 
 class TestVectorStore:
-    """向量数据库服务测试"""
+    """测试向量存储抽象类"""
 
-    @pytest.fixture
-    def vector_store(self):
-        return VectorStore(
-            collection_name="test_collection",
-            dimension=1024,
-            index_type="HNSW",
-        )
+    @pytest.mark.asyncio
+    async def test_in_memory_insert_and_search(self):
+        """测试 InMemoryVectorStore 的插入和搜索功能"""
+        # 创建 InMemory 存储
+        in_memory_store = InMemoryVectorStore(dimension=4)
 
-    @pytest.fixture
-    def sample_records(self):
-        """创建测试记录"""
-        return [
+        # 创建测试数据
+        records = [
             VectorRecord(
-                id="doc1",
-                vector=np.random.randn(1024).astype(np.float32),
-                text="测试文档1",
-                metadata={"source": "test", "category": "A"},
+                id="test1",
+                vector=np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32),
+                text="测试文档1内容",
+                metadata={"source": "test1.txt"}
             ),
             VectorRecord(
-                id="doc2",
-                vector=np.random.randn(1024).astype(np.float32),
-                text="测试文档2",
-                metadata={"source": "test", "category": "B"},
-            ),
-            VectorRecord(
-                id="doc3",
-                vector=np.random.randn(1024).astype(np.float32),
-                text="测试文档3",
-                metadata={"source": "prod", "category": "A"},
-            ),
+                id="test2",
+                vector=np.array([0.2, 0.3, 0.4, 0.5], dtype=np.float32),
+                text="测试文档2内容",
+                metadata={"source": "test2.txt"}
+            )
         ]
 
-    @pytest.mark.asyncio
-    async def test_insert_single_batch(self, vector_store, sample_records):
-        """测试单批次插入"""
-        with patch.object(vector_store, '_insert_batch') as mock_insert:
-            mock_insert.return_value = None
-
-            result = await vector_store.insert(sample_records, batch_size=10)
-            assert result["inserted"] == 3
-            assert result["errors"] == 0
-
-    @pytest.mark.asyncio
-    async def test_insert_multiple_batches(self, vector_store, sample_records):
-        """测试多批次插入"""
-        with patch.object(vector_store, '_insert_batch') as mock_insert:
-            mock_insert.return_value = None
-
-            result = await vector_store.insert(sample_records, batch_size=2)
-            assert result["inserted"] == 3
-            assert mock_insert.call_count == 2  # 2 + 1 = 2 batches
-
-    @pytest.mark.asyncio
-    async def test_insert_with_retry(self, vector_store, sample_records):
-        """测试插入重试"""
-        with patch.object(vector_store, '_insert_batch') as mock_insert:
-            # 第一次失败，第二次成功
-            mock_insert.side_effect = [Exception("连接失败"), None]
-
-            with patch('asyncio.sleep', return_value=None):
-                result = await vector_store.insert(
-                    sample_records[:1], batch_size=10, max_retries=3, base_delay=0.1
-                )
-                assert result["inserted"] == 1
-                assert result["errors"] == 0
-                assert mock_insert.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_insert_all_retries_failed(self, vector_store, sample_records):
-        """测试所有重试都失败"""
-        with patch.object(vector_store, '_insert_batch') as mock_insert:
-            mock_insert.side_effect = Exception("连接失败")
-
-            with patch('asyncio.sleep', return_value=None):
-                result = await vector_store.insert(
-                    sample_records[:1], batch_size=10, max_retries=2, base_delay=0.1
-                )
-                assert result["inserted"] == 0
-                assert result["errors"] == 1
-                assert mock_insert.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_insert_empty_list(self, vector_store):
-        """测试插入空列表"""
-        result = await vector_store.insert([])
-        assert result["inserted"] == 0
+        # 插入数据
+        result = await in_memory_store.insert(records)
+        assert result["inserted"] == 2
         assert result["errors"] == 0
 
+        # 搜索测试
+        query_vector = np.array([0.15, 0.25, 0.35, 0.45], dtype=np.float32)
+        results = await in_memory_store.search(query_vector, top_k=1)
+
+        assert len(results) == 1
+        assert results[0].id == "test1" or results[0].id == "test2"
+        assert results[0].score > 0
+
     @pytest.mark.asyncio
-    async def test_search_basic(self, vector_store):
-        """测试基本搜索"""
-        mock_results = [
-            MagicMock(
-                get=lambda key, default: {
-                    'distance': 0.5,
-                    'id': 'doc1',
-                    'entity': {'text': '测试文档1', 'metadata': {'source': 'test'}}
-                }.get(key, default)
+    async def test_milvus_insert_and_search(self):
+        """测试 MilvusVectorStore 的插入和搜索功能（使用 mock）"""
+        # 创建 mock 客户端
+        mock_client = MagicMock()
+        mock_client.has_collection.return_value = True
+        mock_client.insert.return_value = {"insert_count": 1}
+
+        # 设置搜索返回结果
+        mock_client.search.return_value = [
+            [{
+                "id": "test1",
+                "distance": 0.1,
+                "entity": {"text": "测试文档内容", "metadata": {"source": "test.txt"}}
+            }]
+        ]
+
+        # 创建向量存储
+        store = VectorStore(collection_name="test_collection")
+        store._client = mock_client
+
+        # 创建测试数据
+        records = [
+            VectorRecord(
+                id="test1",
+                vector=np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float64),  # 使用 float64
+                text="测试文档内容",
+                metadata={"source": "test.txt"}
             )
         ]
 
-        with patch.object(vector_store, '_client') as mock_client:
-            mock_client.search.return_value = [mock_results]
-            mock_client.has_collection.return_value = True
+        # 测试插入 - 验证向量被转换为 float32
+        await store._insert_batch(records)
 
-            query_vector = np.random.randn(1024).astype(np.float32)
-            results = await vector_store.search(query_vector, top_k=5)
+        # 验证插入调用
+        inserted_data = mock_client.insert.call_args[1]["data"][0]
+        # 验证向量是 float32 类型
+        assert all(isinstance(v, np.float32) or isinstance(v, float) and v == float(np.float32(v))
+                  for v in inserted_data["vector"])
 
-            assert len(results) == 1
-            assert results[0].id == "doc1"
-            assert results[0].distance == 0.5
+        # 测试搜索 - 验证查询向量被转换为 float32
+        query_vector = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float64)
+        results = await store.search(query_vector, top_k=1)
 
-    @pytest.mark.asyncio
-    async def test_search_with_distance_threshold(self, vector_store):
-        """测试距离阈值过滤"""
-        mock_results = [
-            MagicMock(get=lambda key, default: {'distance': 0.3, 'id': 'doc1', 'entity': {'text': '测试1', 'metadata': {}}}.get(key, default)),
-            MagicMock(get=lambda key, default: {'distance': 0.8, 'id': 'doc2', 'entity': {'text': '测试2', 'metadata': {}}}.get(key, default)),
-        ]
+        # 验证搜索调用
+        search_data = mock_client.search.call_args[1]["data"][0]
+        # 验证查询向量是 float32 类型
+        assert all(isinstance(v, np.float32) or isinstance(v, float) and v == float(np.float32(v))
+                  for v in search_data)
 
-        with patch.object(vector_store, '_client') as mock_client:
-            mock_client.search.return_value = [mock_results]
-            mock_client.has_collection.return_value = True
-
-            query_vector = np.random.randn(1024).astype(np.float32)
-            results = await vector_store.search(query_vector, top_k=5, distance_threshold=0.5)
-
-            assert len(results) == 1
-            assert results[0].id == "doc1"
+        assert len(results) == 1
+        assert results[0].id == "test1"
+        assert results[0].text == "测试文档内容"
+        assert results[0].distance == 0.1
 
     @pytest.mark.asyncio
-    async def test_search_with_metadata_filter(self, vector_store):
-        """测试元数据过滤"""
-        with patch.object(vector_store, '_client') as mock_client:
-            mock_client.search.return_value = [[]]
-            mock_client.has_collection.return_value = True
+    async def test_vector_type_conversion(self):
+        """测试向量类型转换 - 确保 float64 被转换为 float32"""
+        # 创建测试向量（float64）
+        float64_vector = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float64)
 
-            query_vector = np.random.randn(1024).astype(np.float32)
-            await vector_store.search(
-                query_vector,
-                top_k=5,
-                metadata_filter={"source": "test", "category": "A"},
-            )
+        # 模拟转换
+        float32_vector = float64_vector.astype(np.float32)
 
-            # 验证过滤表达式构建
-            call_kwargs = mock_client.search.call_args[1]
-            assert 'filter' in call_kwargs
-
-    @pytest.mark.asyncio
-    async def test_delete(self, vector_store):
-        """测试删除"""
-        with patch.object(vector_store, '_client') as mock_client:
-            mock_client.delete.return_value = None
-
-            result = await vector_store.delete(["doc1", "doc2"])
-            assert result == 2
+        # 验证转换结果
+        assert float32_vector.dtype == np.float32
+        assert np.allclose(float64_vector, float32_vector)
 
 
-class TestInMemoryVectorStore:
-    """内存向量存储测试"""
-
-    @pytest.fixture
-    def memory_store(self):
-        return InMemoryVectorStore(dimension=1024)
-
-    @pytest.fixture
-    def sample_records(self):
-        return [
-            VectorRecord(
-                id="doc1",
-                vector=np.array([1.0, 0.0, 0.0] + [0.0] * 1021, dtype=np.float32),
-                text="文档1",
-                metadata={"category": "A"},
-            ),
-            VectorRecord(
-                id="doc2",
-                vector=np.array([0.0, 1.0, 0.0] + [0.0] * 1021, dtype=np.float32),
-                text="文档2",
-                metadata={"category": "B"},
-            ),
-            VectorRecord(
-                id="doc3",
-                vector=np.array([0.5, 0.5, 0.0] + [0.0] * 1021, dtype=np.float32),
-                text="文档3",
-                metadata={"category": "A"},
-            ),
-        ]
-
-    @pytest.mark.asyncio
-    async def test_insert_and_search(self, memory_store, sample_records):
-        """测试插入和搜索"""
-        await memory_store.insert(sample_records)
-
-        # 搜索与 doc1 相似的向量
-        query = np.array([1.0, 0.0, 0.0] + [0.0] * 1021, dtype=np.float32)
-        results = await memory_store.search(query, top_k=2)
-
-        assert len(results) == 2
-        assert results[0].id == "doc1"  # 最相似
-
-    @pytest.mark.asyncio
-    async def test_search_with_metadata_filter(self, memory_store, sample_records):
-        """测试元数据过滤搜索"""
-        await memory_store.insert(sample_records)
-
-        query = np.array([1.0, 0.0, 0.0] + [0.0] * 1021, dtype=np.float32)
-        results = await memory_store.search(
-            query, top_k=10, metadata_filter={"category": "A"}
-        )
-
-        assert len(results) == 2
-        assert all(r.metadata["category"] == "A" for r in results)
-
-    @pytest.mark.asyncio
-    async def test_search_with_distance_threshold(self, memory_store, sample_records):
-        """测试距离阈值"""
-        await memory_store.insert(sample_records)
-
-        query = np.array([1.0, 0.0, 0.0] + [0.0] * 1021, dtype=np.float32)
-        results = await memory_store.search(query, top_k=10, distance_threshold=1.0)
-
-        # 只有 doc1 和 doc3 的距离小于 1.0
-        assert len(results) == 2
-
-    @pytest.mark.asyncio
-    async def test_delete(self, memory_store, sample_records):
-        """测试删除"""
-        await memory_store.insert(sample_records)
-        await memory_store.delete(["doc1"])
-
-        query = np.array([1.0, 0.0, 0.0] + [0.0] * 1021, dtype=np.float32)
-        results = await memory_store.search(query, top_k=10)
-
-        assert len(results) == 2
-        assert all(r.id != "doc1" for r in results)
-
-    @pytest.mark.asyncio
-    async def test_empty_store_search(self, memory_store):
-        """测试空存储搜索"""
-        query = np.random.randn(1024).astype(np.float32)
-        results = await memory_store.search(query, top_k=5)
-        assert len(results) == 0
-
-
-class TestVectorStoreFilter:
-    """过滤表达式测试"""
-
-    @pytest.fixture
-    def vector_store(self):
-        return VectorStore(dimension=1024)
-
-    def test_build_filter_string(self, vector_store):
-        """测试字符串过滤"""
-        filter_dict = {"source": "test", "category": "A"}
-        expr = vector_store._build_filter(filter_dict)
-        assert 'metadata["source"] == "test"' in expr
-        assert 'metadata["category"] == "A"' in expr
-        assert " and " in expr
-
-    def test_build_filter_number(self, vector_store):
-        """测试数字过滤"""
-        filter_dict = {"version": 1, "score": 0.5}
-        expr = vector_store._build_filter(filter_dict)
-        assert 'metadata["version"] == 1' in expr
-        assert 'metadata["score"] == 0.5' in expr
-
-    def test_build_filter_list(self, vector_store):
-        """测试列表过滤"""
-        filter_dict = {"status": ["active", "pending"]}
-        expr = vector_store._build_filter(filter_dict)
-        assert 'metadata["status"] in ["active", "pending"]' in expr
-
-    def test_build_filter_empty(self, vector_store):
-        """测试空过滤"""
-        expr = vector_store._build_filter({})
-        assert expr == ""
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

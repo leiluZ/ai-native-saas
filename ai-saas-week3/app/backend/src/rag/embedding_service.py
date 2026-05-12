@@ -48,10 +48,17 @@ class EmbeddingService:
 
         try:
             from transformers import AutoTokenizer, AutoModel
+            import torch
 
             self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-            self._model = AutoModel.from_pretrained(self.model_name)
-            self._model.to(self.device)
+
+            # 明确使用 CPU 模式加载模型
+            self._model = AutoModel.from_pretrained(
+                self.model_name,
+                torch_dtype=torch.float32,
+                low_cpu_mem_usage=False,  # 禁用以避免需要 accelerate 库
+            )
+            self._model = self._model.to("cpu")
             self._model.eval()
 
             logger.info("[EmbeddingService] Model loaded successfully")

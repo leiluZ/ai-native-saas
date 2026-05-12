@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   AlertCircle,
+  AlertTriangle,
   CheckCircle,
   MessageCircle,
   Send,
@@ -71,6 +72,7 @@ export const RAGPanel: React.FC = () => {
   >("recursive");
   const [results, setResults] = useState<RAGResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"upload" | "text">("upload");
   // Q&A related state
@@ -95,36 +97,59 @@ export const RAGPanel: React.FC = () => {
   };
 
   const parseDocuments = async () => {
-    if (files.length === 0 && !textInput.trim()) return;
+    if (files.length === 0 && !textInput.trim()) {
+      console.log("[RAGPanel] No files and no text input, skipping");
+      return;
+    }
 
     setLoading(true);
+    setError(null);
+    console.log("[RAGPanel] Starting parseDocuments", {
+      activeTab,
+      filesCount: files.length,
+      textInputLength: textInput.length,
+    });
+
     try {
       let parseResult: RAGResult | null = null;
 
       if (activeTab === "upload" && files.length > 0) {
+        console.log("[RAGPanel] Processing file upload");
         const formData = new FormData();
         files.forEach((file) => formData.append("files", file));
         formData.append("chunk_size", chunkSize.toString());
         formData.append("overlap_ratio", (overlapRatio / 100).toString());
         formData.append("chunk_strategy", strategy);
 
-        const response = await fetch(
-          `${
-            import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
-          }/rag/parse`,
-          {
-            method: "POST",
-            body: formData,
-          },
-        );
+        const apiUrl =
+          import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
+        console.log("[RAGPanel] Sending to:", `${apiUrl}/rag/parse`);
+
+        const response = await fetch(`${apiUrl}/rag/parse`, {
+          method: "POST",
+          body: formData,
+        });
+
+        console.log("[RAGPanel] Parse response status:", response.status);
 
         if (response.ok) {
           const data = await response.json();
+          console.log("[RAGPanel] Parse successful:", data);
           parseResult = data;
         } else {
-          console.error("Failed to parse documents");
+          let errorMessage;
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData?.detail || "Failed to parse documents";
+          } catch {
+            errorMessage = `Failed to parse documents (HTTP ${response.status})`;
+          }
+          setError(errorMessage);
+          console.error("[RAGPanel] Parse failed:", errorMessage);
+          return;
         }
       } else if (activeTab === "text" && textInput.trim()) {
+        console.log("[RAGPanel] Processing text input");
         const response = await fetch(
           `${
             import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
@@ -162,7 +187,11 @@ export const RAGPanel: React.FC = () => {
             errors: [],
           };
         } else {
-          console.error("Failed to chunk text");
+          const errorData = await response.json().catch(() => null);
+          const errorMessage = errorData?.detail || "Failed to chunk text";
+          setError(errorMessage);
+          console.error("[RAGPanel] Failed to chunk text:", errorMessage);
+          return;
         }
       }
 
@@ -197,7 +226,10 @@ export const RAGPanel: React.FC = () => {
                 `[Index] ${doc.metadata.source}: ${indexData.chunks_indexed} chunks indexed`,
               );
             } else {
-              console.error(`[Index] Failed to index ${doc.metadata.source}`);
+              const errorData = await indexResponse.json().catch(() => null);
+              const errorMessage =
+                errorData?.detail || `Failed to index ${doc.metadata.source}`;
+              console.error("[Index] Failed to index:", errorMessage);
             }
           }
         }
@@ -207,6 +239,9 @@ export const RAGPanel: React.FC = () => {
         setResults(parseResult);
       }
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      setError(errorMessage);
       console.error("Error:", error);
     } finally {
       setLoading(false);
@@ -230,77 +265,105 @@ export const RAGPanel: React.FC = () => {
     };
     setChatMessages((prev) => [...prev, userMessage]);
 
-    try {
-      const response = await fetch(
-        `${
-          import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
-        }/chat/rag/execute`,
-        {
+    const apiUrl =
+      import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
+
+    // Retry logic for CI robustness
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(
+          `[RAGPanel] Sending request to RAG endpoint (attempt ${attempt}/${maxRetries})`,
+        );
+        const response = await fetch(`${apiUrl}/chat/rag/execute`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             prompt: questionInput,
             session_id: sessionId || undefined,
           }),
-        },
-      );
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (!sessionId) {
-          setSessionId(data.data.session_id);
+        console.log("[RAGPanel] Response status:", response.status);
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log(
+            "[RAGPanel] Response data:",
+            JSON.stringify(data, null, 2),
+          );
+
+          if (!sessionId) {
+            setSessionId(data.data.session_id);
+          }
+
+          let responseContent = data.data.response;
+          let responseConfidence = data.data.confidence;
+          let responseReferences = data.data.references;
+
+          try {
+            const parsedResponse = JSON.parse(data.data.response);
+            responseContent = parsedResponse.answer || data.data.response;
+            responseConfidence =
+              parsedResponse.confidence || data.data.confidence;
+            responseReferences =
+              parsedResponse.references || data.data.references;
+          } catch (e) {
+            console.log("Response is not JSON, using raw response");
+          }
+
+          const assistantMessage: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            content: responseContent,
+            role: "assistant",
+            confidence: responseConfidence,
+            references: responseReferences,
+            timestamp: new Date(),
+          };
+          console.log("[RAGPanel] Adding assistant message:", assistantMessage);
+          setChatMessages((prev) => [...prev, assistantMessage]);
+          setIsAnswering(false);
+          setQuestionInput("");
+          return; // Success, exit loop
+        } else {
+          const errorData = await response.json().catch(() => null);
+          console.error(
+            "[RAGPanel] Failed to get answer, status:",
+            response.status,
+            "error:",
+            errorData,
+          );
+          throw new Error(`API returned status ${response.status}`);
         }
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.error(
+          `[RAGPanel] Error on attempt ${attempt}:`,
+          lastError.message,
+        );
 
-        // 解析后端返回的 JSON 字符串
-        let responseContent = data.data.response;
-        let responseConfidence = data.data.confidence;
-        let responseReferences = data.data.references;
-
-        try {
-          const parsedResponse = JSON.parse(data.data.response);
-          responseContent = parsedResponse.answer || data.data.response;
-          // 优先使用 JSON 中的 confidence，如果不存在则使用路由返回的
-          responseConfidence =
-            parsedResponse.confidence || data.data.confidence;
-          responseReferences =
-            parsedResponse.references || data.data.references;
-        } catch (e) {
-          // 如果不是 JSON 格式，直接使用原始响应
-          console.log("Response is not JSON, using raw response");
+        if (attempt < maxRetries) {
+          const delay = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s
+          console.log(`[RAGPanel] Retrying in ${delay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
-
-        const assistantMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          content: responseContent,
-          role: "assistant",
-          confidence: responseConfidence,
-          references: responseReferences,
-          timestamp: new Date(),
-        };
-        setChatMessages((prev) => [...prev, assistantMessage]);
-      } else {
-        console.error("Failed to get answer");
-        const errorMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          content: "抱歉，无法获取答案，请稍后重试。",
-          role: "assistant",
-          timestamp: new Date(),
-        };
-        setChatMessages((prev) => [...prev, errorMessage]);
       }
-    } catch (error) {
-      console.error("Error:", error);
-      const errorMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        content: "连接错误，请检查后端服务是否运行。",
-        role: "assistant",
-        timestamp: new Date(),
-      };
-      setChatMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsAnswering(false);
-      setQuestionInput("");
     }
+
+    // If all retries failed
+    console.error("[RAGPanel] All retries failed:", lastError?.message);
+    const errorMessage: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      content: lastError?.message || "连接错误，请检查后端服务是否运行。",
+      role: "assistant",
+      timestamp: new Date(),
+    };
+    setChatMessages((prev) => [...prev, errorMessage]);
+
+    setIsAnswering(false);
+    setQuestionInput("");
   };
 
   const getConfidenceColor = (confidence?: string) => {
@@ -538,7 +601,15 @@ export const RAGPanel: React.FC = () => {
               Results
             </h2>
 
-            {!results ? (
+            {error ? (
+              <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                <div className="flex items-center text-red-600 dark:text-red-400">
+                  <AlertTriangle className="w-5 h-5 mr-2" />
+                  <span className="font-medium">Error</span>
+                </div>
+                <p className="mt-2 text-red-700 dark:text-red-300">{error}</p>
+              </div>
+            ) : !results ? (
               <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                 <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
                 <p>No results yet</p>

@@ -12,7 +12,7 @@
 | :-------: | :---------------------------- | :------------------------------------------------------------------------------- |
 | **Day 1** | 文档解析与清洗流水线          | 掌握多格式文档提取、表格/OCR 解析与噪声清洗，构建可复用的 ETL 管道               |
 | **Day 2** | 智能分块策略实现              | 理解分块粒度对召回的影响，实现语义/结构/Token 重叠分块算法                       |
-| **Day 3** | Embedding 与向量索引构建      | 掌握 BGE-M3 多语言 Embedding，构建 Milvus/Chroma 高效向量索引                    |
+| **Day 3** | Embedding 与向量索引构建      | 掌握 BGE-M3 多语言 Embedding，构建 Milvus 高效向量索引                           |
 | **Day 4** | 混合检索与 Cross-Encoder 重排 | 突破单一向量检索瓶颈，实现 BM25 + 向量融合 + 精排闭环                            |
 | **Day 5** | RAGAS 自动化评估闭环          | 建立量化评估体系，自动化计算 Faithfulness / Answer Relevance / Context Precision |
 | **Day 6** | 基于评估分数的自动调优        | 用数据驱动参数寻优，自动化调整 chunk_size 与 rerank 阈值                         |
@@ -61,16 +61,18 @@ graph TB
 
         subgraph RAG_Pipeline["RAG Pipeline"]
             Parser[文档解析器<br/>document_parser.py]
-            Cleaner[清洗器<br/>cleaner.py]
             Chunker[智能分块器<br/>chunk_manager.py]
             Embedding[BGE-M3 编码器<br/>embedding_service.py]
             VectorStore[Milvus 索引<br/>vector_store.py]
-            Retriever[检索器<br/>retriever.py]
-            Reranker[重排序器<br/>reranker.py]
-            Generator[响应生成器<br/>generator.py]
+            Retriever[混合检索器<br/>hybrid_search.py]
+            Reranker[RRF 融合重排<br/>hybrid_search.py]
         end
 
-        Evaluator[检索评估<br/>evaluator.py]
+        subgraph Agent["Agent 层"]
+            RagTool[RAG 工具<br/>rag_tool.py]
+            RagAgent[LangGraph RAG Agent<br/>langgraph_rag_agent.py]
+            ChatAgent[LangGraph 聊天 Agent<br/>langgraph_chat_agent.py]
+        end
     end
 
     subgraph Data["Data Layer"]
@@ -89,19 +91,19 @@ graph TB
     DocSource --> Upload
     Upload --> API
     API --> Parser
-    Parser --> Cleaner
-    Cleaner --> Chunker
+    Parser --> Chunker
     Chunker --> Embedding
     Embedding --> VectorStore
     VectorStore --> Milvus
     API --> Retriever
     Retriever --> VectorStore
     Retriever --> Reranker
-    Reranker --> Generator
-    Generator --> Ollama
-    Generator --> API
-    Evaluator --> Retriever
-    Evaluator --> Generator
+    RagAgent --> RagTool
+    RagTool --> Retriever
+    RagAgent --> Ollama
+    ChatAgent --> Ollama
+    API --> RagAgent
+    API --> ChatAgent
 
     style User fill:#f9f,stroke:#333,stroke-width:2px
     style Frontend fill:#bbf,stroke:#333,stroke-width:2px
@@ -129,18 +131,18 @@ graph TB
 ```mermaid
 flowchart TD
     A[用户上传文档] --> B[文档解析器]
-    B -->|PDF/Word/TXT/Markdown| C[内容清洗]
-    C --> D[智能分块]
-    D -->|语义切分+固定长度| E[Token 化]
-    E --> F[重叠去重]
-    F --> G[BGE-M3 编码]
-    G --> H[Milvus 向量索引]
-    H -->|批量插入| I[构建完成]
+    B -->|PDF/Word/TXT/Markdown| C[智能分块]
+    C -->|语义切分+固定长度+标题感知| D[Token 化]
+    D --> E[重叠去重]
+    E --> F[BGE-M3 编码]
+    F --> G[Milvus 向量索引]
+    G -->|批量插入| H[构建完成]
 
-    J[用户查询] --> K[查询编码]
-    K --> L[向量检索]
-    L -->|Top-K| M[重排序]
-    M -->|Rerank| N[上下文组装]
+    I[用户查询] --> J[查询编码]
+    J --> K[向量检索]
+    K -->|Top-K| L[BM25 文本检索]
+    L --> M[RRF 融合重排]
+    M --> N[上下文组装]
     N --> O[LLM 生成]
     O --> P[返回结果]
 
@@ -153,21 +155,29 @@ flowchart TD
 | 模块         | 功能描述                   | 关键文件                       |
 | ------------ | -------------------------- | ------------------------------ |
 | **文档解析** | 支持 PDF/Word/TXT/Markdown | `src/rag/document_parser.py`   |
-| **内容清洗** | 去除噪声、格式规范化       | `src/rag/cleaner.py`           |
 | **智能分块** | 语义感知切分策略           | `src/rag/chunk_manager.py`     |
 | **嵌入服务** | BGE-M3 多语言编码          | `src/rag/embedding_service.py` |
 | **向量存储** | Milvus 索引管理            | `src/rag/vector_store.py`      |
 
 #### 3. 检索策略
 
-| 策略           | 描述                 |
-| -------------- | -------------------- |
-| **语义检索**   | 基于向量相似度的召回 |
-| **元数据过滤** | 按文档类型/时间筛选  |
-| **混合检索**   | BM25 + 向量混合      |
-| **重排序**     | Cross-Encoder 精排   |
+| 策略           | 描述                   |
+| -------------- | ---------------------- |
+| **语义检索**   | 基于向量相似度的召回   |
+| **文本检索**   | 基于 BM25 的关键词检索 |
+| **混合检索**   | RRF 融合 BM25 + 向量   |
+| **重排序**     | RRF 融合排序           |
+| **元数据过滤** | 按文档类型/时间筛选    |
 
-#### 4. RAG 评估体系
+#### 4. Agent 集成
+
+| Agent 类型               | 功能描述                            | 关键文件                             |
+| ------------------------ | ----------------------------------- | ------------------------------------ |
+| **LangGraph RAG Agent**  | 集成 RAG 工具的 LangGraph Agent     | `src/agents/langgraph_rag_agent.py`  |
+| **LangGraph Chat Agent** | 支持 Human-in-the-Loop 的聊天 Agent | `src/agents/langgraph_chat_agent.py` |
+| **RAG 工具**             | 封装 RAG 检索为 LangChain Tool      | `src/agents/rag_tool.py`             |
+
+#### 5. RAG 评估体系
 
 | 评估维度       | 指标                | 说明           |
 | -------------- | ------------------- | -------------- |
@@ -185,31 +195,57 @@ ai-saas-week3/
 │   │   ├── src/
 │   │   │   ├── rag/
 │   │   │   │   ├── document_parser.py    # 文档解析器
-│   │   │   │   ├── cleaner.py            # 内容清洗
 │   │   │   │   ├── chunk_manager.py      # 智能分块
 │   │   │   │   ├── embedding_service.py  # Embedding 服务
 │   │   │   │   ├── vector_store.py       # 向量存储
-│   │   │   │   ├── retriever.py          # 检索器
-│   │   │   │   ├── reranker.py           # 重排序器
-│   │   │   │   ├── generator.py          # 响应生成
-│   │   │   │   └── evaluator.py          # RAG 评估
+│   │   │   │   ├── hybrid_search.py      # 混合检索与重排
+│   │   │   │   └── schemas.py            # RAG 数据模型
+│   │   │   ├── agents/
+│   │   │   │   ├── langgraph_rag_agent.py   # LangGraph RAG Agent
+│   │   │   │   ├── langgraph_chat_agent.py  # LangGraph 聊天 Agent
+│   │   │   │   ├── rag_tool.py              # RAG 工具封装
+│   │   │   │   ├── tool_registry.py         # 工具注册中心
+│   │   │   │   ├── llm_client.py            # LLM 客户端
+│   │   │   │   ├── memory_manager.py        # 记忆管理
+│   │   │   │   └── agent_router.py          # Agent 路由
 │   │   │   ├── routes/v1/
 │   │   │   │   ├── rag.py                # RAG API
-│   │   │   │   └── documents.py          # 文档管理 API
+│   │   │   │   ├── chat.py               # 聊天 API
+│   │   │   │   └── health.py             # 健康检查
+│   │   │   ├── schemas/
+│   │   │   │   ├── chat.py               # 聊天数据模型
+│   │   │   │   └── common.py             # 通用数据模型
+│   │   │   ├── utils/
+│   │   │   │   ├── session_memory.py     # 会话记忆
+│   │   │   │   └── circuit_breaker.py    # 熔断器
 │   │   │   └── main.py                   # FastAPI 入口
 │   │   ├── tests/
-│   │   │   ├── test_rag_pipeline.py      # RAG 管道测试
 │   │   │   ├── test_document_parser.py   # 文档解析测试
-│   │   │   ├── test_retrieval.py         # 检索测试
-│   │   │   └── test_evaluation.py        # 评估测试
+│   │   │   ├── test_chunk_manager.py     # 分块测试
+│   │   │   ├── test_embedding_service.py # Embedding 测试
+│   │   │   ├── test_vector_store.py      # 向量存储测试
+│   │   │   ├── test_hybrid_search.py     # 混合检索测试
+│   │   │   ├── test_rag_agent.py         # RAG Agent 测试
+│   │   │   ├── test_langgraph_chat_agent.py # LangGraph 测试
+│   │   │   ├── test_tool_registry.py     # 工具注册测试
+│   │   │   ├── test_memory_manager.py    # 记忆管理测试
+│   │   │   └── test_main.py              # 主应用测试
+│   │   ├── scripts/
+│   │   │   ├── ragas_evaluate.py         # RAGAS 评估脚本
+│   │   │   ├── benchmark_hybrid_search.py # 混合检索基准测试
+│   │   │   ├── test_document_parser.py   # 文档解析器测试
+│   │   │   └── rag_tuner.py              # RAG 参数自动调优
 │   │   ├── Dockerfile
 │   │   └── requirements.txt
 │   │
 │   └── web/
 │       ├── src/
 │       │   ├── components/
-│       │   │   ├── DocumentUpload.tsx    # 文档上传
-│       │   │   └── RagChat.tsx           # RAG 聊天界面
+│       │   │   ├── RAGPanel.tsx          # RAG 面板
+│       │   │   ├── LangGraphPanel.tsx    # LangGraph 面板
+│       │   │   ├── ChatContainer.tsx     # 聊天容器
+│       │   │   ├── ChatInput.tsx         # 聊天输入
+│       │   │   └── MessageBubble.tsx     # 消息气泡
 │       │   └── store/
 │       ├── e2e/tests/
 │       │   └── rag-workflow.spec.ts      # RAG 流程测试
@@ -264,39 +300,43 @@ docker compose ps
 
 #### 主要 API 端点
 
-| 端点                     | 方法   | 说明         |
-| ------------------------ | ------ | ------------ |
-| `/api/v1/documents/`     | POST   | 上传文档     |
-| `/api/v1/documents/`     | GET    | 获取文档列表 |
-| `/api/v1/documents/{id}` | DELETE | 删除文档     |
-| `/api/v1/rag/query/`     | POST   | RAG 查询     |
-| `/api/v1/rag/evaluate/`  | POST   | RAG 评估     |
+| 端点                             | 方法 | 说明               |
+| -------------------------------- | ---- | ------------------ |
+| `/api/v1/rag/parse`              | POST | 解析并分块文档     |
+| `/api/v1/rag/chunk`              | POST | 文本分块           |
+| `/api/v1/rag/index`              | POST | 索引文档到向量库   |
+| `/api/v1/rag/search`             | GET  | 混合检索           |
+| `/api/v1/rag/health`             | GET  | RAG 健康检查       |
+| `/api/v1/chat/langgraph/execute` | POST | LangGraph 聊天     |
+| `/api/v1/chat/langgraph/rag`     | POST | LangGraph RAG 聊天 |
 
 #### 使用示例
 
 ```bash
-# 上传文档
-curl -X POST http://localhost:8000/api/v1/documents/ \
+# 上传并解析文档
+curl -X POST http://localhost:8000/api/v1/rag/parse \
   -H "Content-Type: multipart/form-data" \
-  -F "file=@document.pdf" \
-  -F "metadata={\"title\": \"财务报表\", \"category\": \"finance\"}"
+  -F "files=@document.pdf" \
+  -F "chunk_size=512" \
+  -F "chunk_strategy=recursive"
 
-# RAG 查询
-curl -X POST http://localhost:8000/api/v1/rag/query/ \
+# 索引文档
+curl -X POST http://localhost:8000/api/v1/rag/index \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "公司去年的营收是多少？",
-    "top_k": 5,
-    "rerank": true
+    "source": "document.pdf",
+    "chunks": [{"content": "...", "metadata": {}}]
   }'
 
-# RAG 评估
-curl -X POST http://localhost:8000/api/v1/rag/evaluate/ \
+# 混合检索
+curl -X GET "http://localhost:8000/api/v1/rag/search?q=公司去年的营收是多少&top_k=5&enable_rerank=true"
+
+# LangGraph RAG 聊天
+curl -X POST http://localhost:8000/api/v1/chat/langgraph/rag \
   -H "Content-Type: application/json" \
   -d '{
-    "queries": ["公司去年的营收是多少？"],
-    "ground_truths": ["去年营收为1000万"],
-    "documents": ["doc_123"]
+    "prompt": "公司去年的营收是多少？",
+    "session_id": "user-123"
   }'
 ```
 
@@ -310,8 +350,8 @@ PYTHONPATH=. pytest tests/ -v
 
 # 运行特定测试
 PYTHONPATH=. pytest tests/test_document_parser.py -v
-PYTHONPATH=. pytest tests/test_retrieval.py -v
-PYTHONPATH=. pytest tests/test_evaluation.py -v
+PYTHONPATH=. pytest tests/test_hybrid_search.py -v
+PYTHONPATH=. pytest tests/test_rag_agent.py -v
 ```
 
 #### 端到端测试
@@ -469,15 +509,6 @@ python3 rag_tuner.py --use-vllm --vllm-url http://localhost:8000/v1
 - `answer`: RAG 系统生成的回答
 - `context`: 检索到的上下文片段列表
 
-### 验收标准
-
-- ✅ 支持 PDF/Word/TXT/Markdown 多格式解析
-- ✅ 智能分块后检索命中率 >90%
-- ✅ 回答与上下文相关度 >85%
-- ✅ 支持元数据过滤检索
-- ✅ 重排序后相关性提升显著
-- ✅ 检索评估报告可生成
-
 ---
 
 ## 第三部分：总结
@@ -486,23 +517,24 @@ python3 rag_tuner.py --use-vllm --vllm-url http://localhost:8000/v1
 
 本项目通过构建一个生产级 RAG 管道系统，实现了 Week 3 的所有学习目标：
 
-| 学习目标                 | 实现方式                                | 关键代码                                                  |
-| ------------------------ | --------------------------------------- | --------------------------------------------------------- |
-| **文档解析与清洗**       | 多格式解析 + 噪声清洗 + 结构化输出      | `src/rag/document_parser.py`                              |
-| **智能分块**             | 固定长度/递归/标题感知分块 + Token 重叠 | `src/rag/chunk_manager.py`                                |
-| **Embedding 与向量索引** | BGE-M3 + Milvus HNSW 索引               | `src/rag/embedding_service.py`, `src/rag/vector_store.py` |
-| **混合检索与重排**       | BM25 + 向量融合 + Cross-Encoder 精排    | `src/rag/retriever.py`, `src/rag/reranker.py`             |
-| **自动化评估**           | RAGAS 一键评估 + 参数自动调优           | `src/rag/evaluator.py`                                    |
-| **Agent 集成**           | RAG 工具封装 + LangGraph 集成           | `src/agents/`                                             |
+| 学习目标                 | 实现方式                                | 关键代码                                                      |
+| ------------------------ | --------------------------------------- | ------------------------------------------------------------- |
+| **文档解析与清洗**       | 多格式解析 + 噪声清洗 + 结构化输出      | `src/rag/document_parser.py`                                  |
+| **智能分块**             | 固定长度/递归/标题感知分块 + Token 重叠 | `src/rag/chunk_manager.py`                                    |
+| **Embedding 与向量索引** | BGE-M3 + Milvus HNSW 索引               | `src/rag/embedding_service.py`, `src/rag/vector_store.py`     |
+| **混合检索与重排**       | BM25 + 向量融合 + RRF 重排              | `src/rag/hybrid_search.py`                                    |
+| **自动化评估**           | RAGAS 一键评估 + 参数自动调优           | `scripts/ragas_evaluate.py`, `scripts/rag_tuner.py`           |
+| **Agent 集成**           | RAG 工具封装 + LangGraph 集成           | `src/agents/rag_tool.py`, `src/agents/langgraph_rag_agent.py` |
 
 ### 知识重点
 
 1. **文档 ETL 管道**: 多格式解析、清洗、结构化输出，错误日志追踪
 2. **分块策略设计**: 固定长度、递归、标题感知三种策略，Token 重叠保留上下文
 3. **向量检索优化**: HNSW/IVF_FLAT 索引选择，批量插入，连接池管理
-4. **混合检索架构**: BM25 关键词检索 + 向量语义检索融合，Cross-Encoder 精排
+4. **混合检索架构**: BM25 关键词检索 + 向量语义检索融合，RRF 融合重排
 5. **RAG 评估体系**: Faithfulness、Answer Relevance、Context Precision 等核心指标
 6. **参数自动调优**: 网格搜索 + 早停策略，数据驱动寻优
+7. **Agent 集成**: LangGraph 状态机 + RAG 工具封装 + Human-in-the-Loop
 
 ### Reference Links
 
