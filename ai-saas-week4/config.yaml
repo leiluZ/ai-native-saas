@@ -19,3 +19,42 @@ timeout: 300
 max_retries: 3
 
 output: ./benchmark_results
+
+quantization:
+  strategy: awq
+  strategies:
+    - awq
+    - gptq
+    - int8
+  model_name: Qwen/Qwen2.5-7B-Instruct
+  quantized_model_path: ./models/quantized
+  fp16_model_path: ./models/fp16
+
+  calibration:
+    dataset: wikitext
+    dataset_name: wikitext-103-v1
+    num_samples: 128
+    max_seq_length: 512
+
+  awq:
+    bits: 4
+    group_size: 128
+    zero_point: true
+
+  gptq:
+    bits: 4
+    group_size: 128
+    act_order: true
+
+  int8:
+    load_in_8bit: true
+
+  validation:
+    perplexity: true
+    quality_regression: true
+    regression_samples: 10
+    similarity_threshold: 0.85
+
+  fallback:
+    enable: true
+    rollback_on_failure: true

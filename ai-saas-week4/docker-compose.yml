@@ -8,6 +8,7 @@ services:
       - "8000:8000"
     volumes:
       - vllm-model:/root/.cache/huggingface
+      - ./models:/models
     environment:
       - VLLM_WORKER_MULTIPROC_METHOD=spawn
       - VLLM_MODEL=/root/.cache/huggingface/models/Qwen/Qwen2.5-7B-Instruct
@@ -19,6 +20,25 @@ services:
               count: 1
               capabilities: [gpu]
     command: --model /root/.cache/huggingface/models/Qwen/Qwen2.5-7B-Instruct --host 0.0.0.0 --port 8000
+
+  vllm-quantized:
+    image: vllm/vllm:latest
+    container_name: vllm-quantized
+    ports:
+      - "8001:8000"
+    volumes:
+      - vllm-model:/root/.cache/huggingface
+      - ./models:/models
+    environment:
+      - VLLM_WORKER_MULTIPROC_METHOD=spawn
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: --model /models/quantized/awq --quantization awq --host 0.0.0.0 --port 8000
 
   ollama:
     image: ollama/ollama:latest
