@@ -58,12 +58,19 @@ class BaseAdapter(ABC):
 class VLLMAdapter(BaseAdapter):
     API_PATH = "/v1/chat/completions"
 
+    def __init__(self, base_url: str, timeout: int = 300, max_retries: int = 3, retry_delay: float = 1.0, model: str = "default", api_key: Optional[str] = None):
+        super().__init__(base_url, timeout, max_retries, retry_delay)
+        self.model = model
+        self.api_key = api_key
+
     async def generate(self, prompt: str, request_id: str, max_tokens: int = 512) -> InferenceResult:
         url = f"{self.base_url}{self.API_PATH}"
         headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
 
         payload = {
-            "model": "default",
+            "model": self.model,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
             "stream": True
@@ -159,11 +166,16 @@ class VLLMAdapter(BaseAdapter):
 class OllamaAdapter(BaseAdapter):
     API_PATH = "/api/generate"
 
+    def __init__(self, base_url: str, timeout: int = 300, max_retries: int = 3, retry_delay: float = 1.0, model: str = "llama2"):
+        super().__init__(base_url, timeout, max_retries, retry_delay)
+        self.model = model
+
     async def generate(self, prompt: str, request_id: str, max_tokens: int = 512) -> InferenceResult:
         url = f"{self.base_url}{self.API_PATH}"
         headers = {"Content-Type": "application/json"}
 
         payload = {
+            "model": self.model,
             "prompt": prompt,
             "stream": True,
             "options": {"num_predict": max_tokens}

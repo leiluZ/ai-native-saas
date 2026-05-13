@@ -101,6 +101,22 @@ def print_metrics(metrics: BenchmarkMetrics, engine_name: str):
             print(f"\nPeak GPU VRAM: {metrics.peak_gpu_vram:.2f} MB")
 
 
+def get_model_for_engine(args: argparse.Namespace) -> Optional[str]:
+    engine = args.engine.lower() if args.engine else "vllm"
+    if engine == "ollama":
+        return args.ollama_model or args.model
+    else:
+        return args.vllm_model or args.model
+
+
+def get_url_for_engine(args: argparse.Namespace) -> str:
+    engine = args.engine.lower() if args.engine else "vllm"
+    if engine == "ollama":
+        return args.ollama_url or args.url or "http://localhost:11434"
+    else:
+        return args.vllm_url or args.url or "http://localhost:8000"
+
+
 async def run_single_benchmark(
     engine: str,
     base_url: str,
@@ -110,19 +126,28 @@ async def run_single_benchmark(
     max_tokens: int,
     timeout: int,
     output_dir: Path,
-    max_retries: int = 3
+    max_retries: int = 3,
+    model: Optional[str] = None,
+    api_key: Optional[str] = None
 ) -> BenchmarkMetrics:
     print(f"\n{'='*60}")
     print(f"Running benchmark for {engine} at {base_url}")
+    if model:
+        print(f"Model: {model}")
     print(f"Prompt length: {prompt_length}, Requests: {total_requests}, Concurrency: {concurrency}")
     print(f"{'='*60}")
 
-    adapter = get_adapter(
-        engine,
-        base_url=base_url,
-        timeout=timeout,
-        max_retries=max_retries
-    )
+    adapter_kwargs = {
+        "base_url": base_url,
+        "timeout": timeout,
+        "max_retries": max_retries
+    }
+    if model:
+        adapter_kwargs["model"] = model
+    if api_key:
+        adapter_kwargs["api_key"] = api_key
+
+    adapter = get_adapter(engine, **adapter_kwargs)
 
     prompts = get_prompts_by_length(prompt_length, total_requests)
 
@@ -151,7 +176,10 @@ async def run_comparison_benchmark(
     max_tokens: int,
     timeout: int,
     output_dir: Path,
-    max_retries: int = 3
+    max_retries: int = 3,
+    vllm_model: Optional[str] = None,
+    ollama_model: Optional[str] = None,
+    vllm_api_key: Optional[str] = None
 ):
     print(f"\n{'='*60}")
     print("RUNNING COMPARISON BENCHMARK")
@@ -160,8 +188,17 @@ async def run_comparison_benchmark(
     prompts = get_prompts_by_length(prompt_length, total_requests)
     prompts_per_engine = len(prompts)
 
-    vllm_adapter = get_adapter("vllm", base_url=vllm_url, timeout=timeout, max_retries=max_retries)
-    ollama_adapter = get_adapter("ollama", base_url=ollama_url, timeout=timeout, max_retries=max_retries)
+    vllm_kwargs = {"base_url": vllm_url, "timeout": timeout, "max_retries": max_retries}
+    ollama_kwargs = {"base_url": ollama_url, "timeout": timeout, "max_retries": max_retries}
+    if vllm_model:
+        vllm_kwargs["model"] = vllm_model
+    if ollama_model:
+        ollama_kwargs["model"] = ollama_model
+    if vllm_api_key:
+        vllm_kwargs["api_key"] = vllm_api_key
+
+    vllm_adapter = get_adapter("vllm", **vllm_kwargs)
+    ollama_adapter = get_adapter("ollama", **ollama_kwargs)
 
     print(f"\n[1/2] Benchmarking vLLM...")
     vllm_start = time.time()
@@ -245,7 +282,12 @@ async def main_async(args):
             output=str(output_dir),
             compare=False,
             vllm_url=config.get('vllm_url', 'http://localhost:8000'),
-            ollama_url=config.get('ollama_url', 'http://localhost:11434')
+            ollama_url=config.get('ollama_url', 'http://localhost:11434'),
+            model=config.get('model'),
+            vllm_model=config.get('vllm_model'),
+            ollama_model=config.get('ollama_model'),
+            api_key=config.get('api_key'),
+            vllm_api_key=config.get('vllm_api_key')
         )
 
     if args.compare:
@@ -258,19 +300,27 @@ async def main_async(args):
             max_tokens=args.max_tokens,
             timeout=args.timeout,
             output_dir=output_dir,
-            max_retries=args.max_retries
+            max_retries=args.max_retries,
+            vllm_model=args.vllm_model,
+            ollama_model=args.ollama_model,
+            vllm_api_key=args.vllm_api_key
         )
     else:
+        model = get_model_for_engine(args)
+        url = get_url_for_engine(args)
+        api_key = args.vllm_api_key if args.engine == "vllm" else None
         metrics = await run_single_benchmark(
             engine=args.engine,
-            base_url=args.url,
+            base_url=url,
             prompt_length=args.prompt_length,
             total_requests=args.total_requests,
             concurrency=args.concurrency,
             max_tokens=args.max_tokens,
             timeout=args.timeout,
             output_dir=output_dir,
-            max_retries=args.max_retries
+            max_retries=args.max_retries,
+            model=model,
+            api_key=api_key
         )
 
         print("\n" + "=" * 60)
@@ -321,6 +371,18 @@ Examples:
     parser.add_argument("--output", type=str, default="./benchmark_results",
                        help="Output directory for results (default: ./benchmark_results)")
 
+    parser.add_argument("--model", type=str,
+                       help="Model name to use (applies to both engines, or the single engine being tested)")
+    parser.add_argument("--vllm-model", type=str,
+                       help="Model name for vLLM")
+    parser.add_argument("--ollama-model", type=str,
+                       help="Model name for Ollama")
+
+    parser.add_argument("--api-key", type=str,
+                       help="API key for authenticated API access (applies to vLLM)")
+    parser.add_argument("--vllm-api-key", type=str,
+                       help="API key for vLLM")
+
     parser.add_argument("--compare", action="store_true",
                        help="Run comparison benchmark between vLLM and Ollama")
     parser.add_argument("--vllm-url", type=str, default="http://localhost:8000",
@@ -329,6 +391,12 @@ Examples:
                        help="Ollama base URL (default: http://localhost:11434)")
 
     args = parser.parse_args()
+
+    if args.compare and args.model:
+        if not args.vllm_model:
+            args.vllm_model = args.model
+        if not args.ollama_model:
+            args.ollama_model = args.model
 
     try:
         asyncio.run(main_async(args))
