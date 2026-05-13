@@ -11,7 +11,7 @@
 | [W1](ai-saas-week1/) | AI-Native 环境 & SaaS 骨架 | Cursor, FastAPI, React, LangChain | ✅ |
 | [W2](ai-saas-week2/) | 多 Agent 编排与状态机 | LangGraph, Human-in-the-Loop | ✅ |
 | [W3](ai-saas-week3/) | RAG 管道与检索评估 | BGE-M3, Milvus, 智能分块 | ✅ |
-| W4 | 私有化部署与推理加速 | vLLM, Ollama, AWQ/GPTQ | 📋 |
+| [W4](ai-saas-week4/) | 私有化部署与推理加速 | vLLM, Ollama, AWQ/GPTQ | ✅ |
 | W5 | 领域微调与 LoRA 实战 | Unsloth, PEFT, QLoRA | 📋 |
 | W6 | 小程序端接入与 UI/UX | Taro/Uniapp, 跨端同步 | 📋 |
 | W7 | 高并发与流式优化 | WebSockets, Celery, k6 | 📋 |
@@ -81,16 +81,23 @@
 
 ---
 
-### Week 4: 私有化部署与推理加速 (计划中)
+### [Week 4: 私有化部署与推理加速](ai-saas-week4/)
 
-**学习目标**: 掌握 vLLM 生产部署、量化加速与云/端智能路由。
+**学习目标**: 掌握 vLLM 生产部署、量化加速与云/端智能路由，构建完整的推理引擎 Benchmark 与量化流水线。
 
-**核心内容**:
-- Ollama vs vLLM 基准测试 (吞吐/延迟/显存)
-- AWQ/GPTQ/INT8 量化转换流程
-- OpenAI 兼容网关 (LiteLLM)
-- KV Cache & PagedAttention 参数调优
-- 智能路由策略 (本地优先 -> 云端 fallback)
+**核心功能**:
+- vLLM vs Ollama 高性能并发压测 (吞吐/TTFT/TPOT 指标)
+- AWQ/GPTQ/INT8 三种量化策略配置驱动切换
+- 自动校准数据集下载 (WikiText-103-v1)
+- Perplexity 计算与质量回归测试 (重复生成相似度对比)
+- 量化失败自动回滚机制
+- vLLM 量化模型加载集成 (`--quantized` 参数)
+
+**关键交付物**:
+- Benchmark 脚本支持短/中/长 Prompt 场景
+- 量化流水线一键运行，配置热切换
+- 显存节省 >50%，吞吐提升 >2x
+- Perplexity 增幅 <5%，质量无严重退化
 
 ---
 
@@ -205,6 +212,7 @@
 | **前端** | React 19, TypeScript, Vite, Tailwind CSS, Zustand, Playwright |
 | **后端** | Python 3.12, FastAPI, SQLAlchemy 2.0, Alembic, Pydantic v2 |
 | **AI/LLM** | LangChain, LangGraph, Ollama, OpenAI API |
+| **推理** | vLLM (PagedAttention), AWQ/GPTQ/INT8 量化, Perplexity 验证 |
 | **数据** | PostgreSQL 16, Redis 7, Milvus (向量数据库) |
 | **RAG** | BGE-M3 Embedding, HNSW/IVF_FLAT 索引, 智能分块 |
 | **部署** | Docker, Docker Compose, GitHub Actions CI/CD |
@@ -247,13 +255,14 @@ ai-native-saas/
 ├── ai-saas-week1/          # Week 1: 基础 Chat Agent
 ├── ai-saas-week2/          # Week 2: LangGraph 多 Agent
 ├── ai-saas-week3/          # Week 3: RAG 管道
-├── ai-saas-week4/          # Week 4: 私有化部署 (计划中)
+├── ai-saas-week4/          # Week 4: 私有化部署 & 量化加速
 ├── ...
 ├── learning-plan/          # 学习计划文档
 │   ├── ai_saas_learning_plan/    # 12周全栈路线图
 │   ├── week1/
 │   ├── week2/
-│   └── week3/
+│   ├── week3/
+│   └── week4/
 ├── .github/workflows/      # CI/CD 配置
 └── README.md               # 本文件
 ```
@@ -266,6 +275,7 @@ ai-native-saas/
 - [Week 1 详细计划](learning-plan/week1/learning-plan-original.md)
 - [Week 2 详细计划](learning-plan/week2/learning-plan-original.md)
 - [Week 3 详细计划](learning-plan/week3/learning-plan-original.md)
+- [Week 4 详细计划](learning-plan/week4/learning-plan-original.md)
 
 ---
 

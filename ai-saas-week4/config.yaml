@@ -4,9 +4,16 @@ base_url: http://localhost:8000
 vllm_url: http://localhost:8000
 ollama_url: http://localhost:11434
 
+model: mistral:latest
+vllm_model: Qwen/Qwen2.5-7B-Instruct
+ollama_model: mistral:latest
+
+api_key: null
+vllm_api_key: null
+
 prompt_length: all
-total_requests: 100
-concurrency: 10
+total_requests: 1
+concurrency: 1
 max_tokens: 512
 timeout: 300
 max_retries: 3
