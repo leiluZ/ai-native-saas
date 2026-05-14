@@ -57,6 +57,30 @@ services:
               count: 1
               capabilities: [gpu]
 
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    container_name: gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - GATEWAY_API_KEY=sk-gateway-default-key
+      - RATE_LIMIT_PER_MINUTE=60
+      - GLOBAL_TIMEOUT=120.0
+      - MAX_RETRIES=3
+      - HEALTH_CHECK_INTERVAL=30
+      - HEARTBEAT_INTERVAL=15.0
+    depends_on:
+      - vllm
+      - ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
 volumes:
   vllm-model:
   ollama-model:

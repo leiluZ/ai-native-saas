@@ -4,6 +4,7 @@ import os
 import json
 import tempfile
 import yaml
+from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -200,3 +201,235 @@ def temp_config_file(temp_dir):
     with open(config_path, "w") as f:
         yaml.dump(config, f)
     return config_path
+
+
+@pytest.fixture
+def gateway_model_entry():
+    from gateway.registry import ModelEntry, ModelStatus
+
+    return ModelEntry(
+        name="test-model",
+        provider="vllm",
+        endpoint="http://localhost:8000",
+        api_key="sk-test-key",
+        priority=1,
+        status=ModelStatus.HEALTHY,
+    )
+
+
+@pytest.fixture
+def gateway_model_entry_unhealthy():
+    from gateway.registry import ModelEntry, ModelStatus
+
+    return ModelEntry(
+        name="unhealthy-model",
+        provider="vllm",
+        endpoint="http://localhost:8001",
+        api_key=None,
+        priority=5,
+        status=ModelStatus.UNHEALTHY,
+    )
+
+
+@pytest.fixture
+def gateway_model_entry_degraded():
+    from gateway.registry import ModelEntry, ModelStatus
+
+    return ModelEntry(
+        name="degraded-model",
+        provider="ollama",
+        endpoint="http://localhost:11434",
+        api_key=None,
+        priority=3,
+        status=ModelStatus.DEGRADED,
+    )
+
+
+@pytest.fixture
+def clean_registry():
+    from gateway.registry import model_registry
+
+    model_registry._models.clear()
+    yield model_registry
+    model_registry._models.clear()
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    from gateway.middleware import rate_limiter
+
+    rate_limiter._clients.clear()
+    yield
+    rate_limiter._clients.clear()
+
+
+@pytest.fixture
+def populated_registry(clean_registry, gateway_model_entry, gateway_model_entry_unhealthy, gateway_model_entry_degraded):
+    clean_registry.register(gateway_model_entry)
+    clean_registry.register(gateway_model_entry_unhealthy)
+    clean_registry.register(gateway_model_entry_degraded)
+    return clean_registry
+
+
+@pytest.fixture
+def chat_request_body():
+    return {
+        "model": "test-model",
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Hello!"},
+        ],
+        "temperature": 0.7,
+        "max_tokens": 100,
+    }
+
+
+@pytest.fixture
+def chat_request_body_with_tools():
+    return {
+        "model": "test-model",
+        "messages": [
+            {"role": "user", "content": "What's the weather in Beijing?"},
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get current weather for a location",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "location": {
+                                "type": "string",
+                                "description": "City name",
+                            }
+                        },
+                        "required": ["location"],
+                    },
+                },
+            }
+        ],
+        "tool_choice": "auto",
+    }
+
+
+@pytest.fixture
+def chat_request_body_stream():
+    return {
+        "model": "test-model",
+        "messages": [
+            {"role": "user", "content": "Tell me a story."},
+        ],
+        "stream": True,
+    }
+
+
+@pytest.fixture
+def embeddings_request_body():
+    return {
+        "model": "test-model",
+        "input": "Hello world",
+    }
+
+
+@pytest.fixture
+def mock_chat_response():
+    return {
+        "id": "chatcmpl-123",
+        "object": "chat.completion",
+        "created": 1677652288,
+        "model": "test-model",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "Hello! How can I help you today?",
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 20,
+            "completion_tokens": 10,
+            "total_tokens": 30,
+        },
+    }
+
+
+@pytest.fixture
+def mock_chat_response_with_tool_calls():
+    return {
+        "id": "chatcmpl-456",
+        "object": "chat.completion",
+        "created": 1677652290,
+        "model": "test-model",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_abc123",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"location": "Beijing"}',
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 30,
+            "completion_tokens": 15,
+            "total_tokens": 45,
+        },
+    }
+
+
+@pytest.fixture
+def mock_models_response():
+    return {
+        "object": "list",
+        "data": [
+            {
+                "id": "test-model",
+                "object": "model",
+                "created": 1677652288,
+                "owned_by": "vllm",
+            }
+        ],
+    }
+
+
+@pytest.fixture
+def mock_embeddings_response():
+    return {
+        "object": "list",
+        "data": [
+            {
+                "object": "embedding",
+                "index": 0,
+                "embedding": [0.1, 0.2, 0.3, 0.4, 0.5],
+            }
+        ],
+        "model": "test-model",
+        "usage": {
+            "prompt_tokens": 2,
+            "total_tokens": 2,
+        },
+    }
+
+
+@pytest.fixture
+def mock_async_client():
+    with patch("httpx.AsyncClient") as mock:
+        client_instance = AsyncMock()
+        mock.return_value.__aenter__.return_value = client_instance
+        yield client_instance
