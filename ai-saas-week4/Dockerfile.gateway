@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY gateway/ ./gateway/
+
+ENV GATEWAY_API_KEY=sk-gateway-default-key
+ENV RATE_LIMIT_PER_MINUTE=60
+ENV GLOBAL_TIMEOUT=120.0
+ENV MAX_RETRIES=3
+ENV HEALTH_CHECK_INTERVAL=30
+ENV HEARTBEAT_INTERVAL=15.0
+
+EXPOSE 8080
+
+CMD ["uvicorn", "gateway.main:app", "--host", "0.0.0.0", "--port", "8080"]

@@ -1,6 +1,6 @@
-# LLM Inference Engine Benchmark & Quantization Pipeline
+# LLM Inference Engine Benchmark, Quantization Pipeline & OpenAI Compatible Gateway
 
-生产级推理引擎 Benchmark 脚本与模型量化转换流水线，支持 vLLM 和 Ollama 双端点对比测试，以及 AWQ/GPTQ/INT8 三种量化策略。
+生产级推理引擎 Benchmark 脚本、模型量化转换流水线与 OpenAI 兼容 API 网关，支持 vLLM/Ollama 双端点对比测试、AWQ/GPTQ/INT8 量化策略，以及多模型路由、流式转发与 Function Calling。
 
 ## 功能特性
 
@@ -23,6 +23,18 @@
 - **显存快照**: 日志记录量化耗时与显存使用情况
 - **vLLM 集成**: 支持 `--quantized` 参数加载量化模型
 
+### 网关功能
+
+- **OpenAI 兼容 API**: 完整映射 `/v1/chat/completions`、`/v1/models`、`/v1/embeddings` 端点
+- **SSE 流式转发**: 严格遵循 OpenAI 流式协议，SSE 格式 chunk 转发，内置心跳保活
+- **Function Calling**: 自动透传 `tools` 定义，解析 vLLM 返回的 `tool_calls`
+- **API Key 鉴权**: Bearer Token 校验，支持排除路径配置
+- **IP 限流**: 基于滑动窗口的请求频率限制，可配置阈值与窗口大小
+- **指数退避重试**: 全局超时控制，自动重试与指数退避策略
+- **全链路追踪**: 请求/响应中间件自动注入 `X-Request-ID`，记录延迟
+- **模型注册表**: `{name, provider, endpoint, api_key, priority}` 结构化模型管理
+- **健康检查与自动降级**: 定期探测模型可用性，连续失败自动降级/下线，恢复后自动上线
+
 ## 项目结构
 
 ```
@@ -36,6 +48,23 @@ ai-saas-week4/
 │   ├── quantization.py    # 量化核心模块
 │   ├── validation.py      # 模型验证模块
 │   └── visualization.py   # 可视化脚本
+├── gateway/
+│   ├── main.py            # FastAPI 应用入口，生命周期管理
+│   ├── config.py          # 网关配置（超时、重试、限流、心跳）
+│   ├── middleware.py       # API Key 校验、IP 限流、Tracing ID
+│   ├── proxy.py           # OpenAI 兼容代理转发、流式处理、重试
+│   ├── registry.py        # 模型注册表、健康检查、自动降级
+│   └── routes/
+│       ├── chat.py        # /v1/chat/completions（含 SSE 流式）
+│       ├── embeddings.py  # /v1/embeddings
+│       ├── health.py      # /health 网关健康检查
+│       └── models.py      # /v1/models
+├── tests/
+│   ├── test_gateway_registry.py
+│   ├── test_gateway_middleware.py
+│   ├── test_gateway_proxy.py
+│   ├── test_gateway_routes.py
+│   └── test_gateway_main.py
 ├── docker-compose.yml     # vLLM + Ollama 并行部署配置
 ├── config.yaml            # 配置文件
 └── requirements.txt       # 依赖列表
@@ -161,6 +190,152 @@ quantization:
     rollback_on_failure: true
 ```
 
+## 网关用法
+
+### 启动网关
+
+```bash
+cd gateway
+uvicorn gateway.main:app --host 0.0.0.0 --port 8080 --reload
+```
+
+### 环境变量配置
+
+创建 `.env` 文件：
+
+```env
+GATEWAY_API_KEY=sk-gateway-default-key
+RATE_LIMIT_PER_MINUTE=60
+GLOBAL_TIMEOUT=120.0
+MAX_RETRIES=3
+HEALTH_CHECK_INTERVAL=30
+HEARTBEAT_INTERVAL=15.0
+```
+
+### API 端点
+
+| 端点                      | 方法 | 说明                         |
+| ------------------------- | ---- | ---------------------------- |
+| `/`                       | GET  | 网关信息                     |
+| `/health`                 | GET  | 网关健康检查（含模型状态）   |
+| `/v1/chat/completions`    | POST | Chat Completions（支持流式） |
+| `/v1/models`              | GET  | 列出可用模型                 |
+| `/v1/models/{model_name}` | GET  | 获取指定模型信息             |
+| `/v1/embeddings`          | POST | 文本向量化                   |
+
+### 使用示例
+
+```bash
+# 非流式 Chat
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer sk-gateway-default-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "vllm-local",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+
+# 流式 Chat
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer sk-gateway-default-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "vllm-local",
+    "messages": [{"role": "user", "content": "Tell me a story."}],
+    "stream": true
+  }'
+
+# Function Calling
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer sk-gateway-default-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "vllm-local",
+    "messages": [{"role": "user", "content": "Weather in Beijing?"}],
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "parameters": {
+          "type": "object",
+          "properties": {"location": {"type": "string"}},
+          "required": ["location"]
+        }
+      }
+    }]
+  }'
+
+# 列出模型
+curl http://localhost:8080/v1/models \
+  -H "Authorization: Bearer sk-gateway-default-key"
+
+# Embeddings
+curl -X POST http://localhost:8080/v1/embeddings \
+  -H "Authorization: Bearer sk-gateway-default-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "vllm-local",
+    "input": "Hello world"
+  }'
+
+# 健康检查
+curl http://localhost:8080/health
+```
+
+### 使用 OpenAI SDK 直连
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8080/v1",
+    api_key="sk-gateway-default-key",
+)
+
+# 非流式
+response = client.chat.completions.create(
+    model="vllm-local",
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(response.choices[0].message.content)
+
+# 流式
+stream = client.chat.completions.create(
+    model="vllm-local",
+    messages=[{"role": "user", "content": "Tell me a story."}],
+    stream=True,
+)
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="")
+
+# Function Calling
+response = client.chat.completions.create(
+    model="vllm-local",
+    messages=[{"role": "user", "content": "Weather in Beijing?"}],
+    tools=[{
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "parameters": {
+                "type": "object",
+                "properties": {"location": {"type": "string"}},
+                "required": ["location"],
+            },
+        },
+    }],
+)
+print(response.choices[0].message.tool_calls)
+```
+
+### 运行网关测试
+
+```bash
+cd ai-saas-week4
+source venv/bin/activate
+PYTHONPATH="$(pwd)" python -m pytest tests/test_gateway_*.py -v
+```
+
 ## 命令行参数
 
 ### main.py（Benchmark）
@@ -250,6 +425,13 @@ quantization:
 - ✅ 吞吐提升 >2x
 - ✅ Perplexity 增幅 <5%
 - ✅ 质量抽检无严重退化
+
+### 网关验收
+
+- ✅ vLLM 完整支持流式 & Function Calling
+- ✅ OpenAI 官方 SDK 零改造直连
+- ✅ 网关额外延迟 <50ms
+- ✅ SSE 流稳定不断连
 
 ## 许可证
 
