@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   vllm:
-    image: vllm/vllm:latest
+    image: vllm/vllm-openai:v0.21.0-ubuntu2404
     container_name: vllm-benchmark
     ports:
       - "8000:8000"
@@ -22,7 +22,7 @@ services:
     command: --model /root/.cache/huggingface/models/Qwen/Qwen2.5-7B-Instruct --host 0.0.0.0 --port 8000
 
   vllm-quantized:
-    image: vllm/vllm:latest
+    image: vllm/vllm-openai:v0.21.0-ubuntu2404
     container_name: vllm-quantized
     ports:
       - "8001:8000"
