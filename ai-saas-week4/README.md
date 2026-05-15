@@ -35,6 +35,16 @@
 - **模型注册表**: `{name, provider, endpoint, api_key, priority}` 结构化模型管理
 - **健康检查与自动降级**: 定期探测模型可用性，连续失败自动降级/下线，恢复后自动上线
 
+### KV Cache 参数自动寻优
+
+- **网格搜索**: 自动遍历 gpu_memory_utilization × block_size × max_num_seqs 组合
+- **自动压测**: 每组配置自动启动 vLLM，运行多轮并发压测，记录 OOM/吞吐/延迟
+- **动态 Prefill 调整**: 根据长序列 Prefill 阻塞情况自动调整 enable_chunked_prefill 与 max_num_batched_tokens
+- **安全阈值**: 显存 >92% 或 P99 延迟 >2s 自动终止，防止硬件损坏
+- **GPU 自动扫描**: 检测 GPU 型号、显存、CUDA 版本
+- **热加载**: 无需重启容器即可应用新参数
+- **可视化输出**: 生成性能对比图与最优 vLLM 启动命令模板
+
 ## 项目结构
 
 ```
@@ -47,7 +57,14 @@ ai-saas-week4/
 │   ├── quantize.py        # 量化流水线主入口
 │   ├── quantization.py    # 量化核心模块
 │   ├── validation.py      # 模型验证模块
-│   └── visualization.py   # 可视化脚本
+│   ├── visualization.py   # 可视化脚本
+│   ├── gpu_scanner.py     # GPU 自动扫描（型号/显存/CUDA）
+│   ├── kv_cache_config.py # KV Cache 网格搜索配置与安全阈值
+│   ├── kv_cache_runner.py # KV Cache 压测编排器
+│   ├── kv_cache_tuner.py  # KV Cache 自动寻优主入口
+│   ├── kv_cache_visualization.py # KV Cache 性能可视化
+│   ├── prefill_adjuster.py # 动态 Prefill 参数调整
+│   └── vllm_lifecycle.py  # vLLM 生命周期管理（启动/停止/热加载）
 ├── gateway/
 │   ├── main.py            # FastAPI 应用入口，生命周期管理
 │   ├── config.py          # 网关配置（超时、重试、限流、心跳）
@@ -64,7 +81,16 @@ ai-saas-week4/
 │   ├── test_gateway_middleware.py
 │   ├── test_gateway_proxy.py
 │   ├── test_gateway_routes.py
-│   └── test_gateway_main.py
+│   ├── test_gateway_main.py
+│   ├── test_gateway_e2e.py
+│   ├── test_gpu_scanner.py
+│   ├── test_kv_cache_config.py
+│   ├── test_kv_cache_runner.py
+│   ├── test_kv_cache_visualization.py
+│   ├── test_kv_cache_integration.py
+│   ├── test_kv_cache_e2e.py
+│   ├── test_prefill_adjuster.py
+│   └── test_vllm_lifecycle.py
 ├── docker-compose.yml     # vLLM + Ollama 并行部署配置
 ├── config.yaml            # 配置文件
 └── requirements.txt       # 依赖列表
@@ -336,6 +362,135 @@ source venv/bin/activate
 PYTHONPATH="$(pwd)" python -m pytest tests/test_gateway_*.py -v
 ```
 
+## KV Cache 参数自动寻优
+
+### 背景知识
+
+#### 什么是 vLLM？
+
+[vLLM](https://github.com/vllm-project/vllm) 是 UC Berkeley 开源的 LLM 推理加速框架，通过 **PagedAttention** 算法实现接近零浪费的 KV Cache 显存管理，推理吞吐可达 HuggingFace Transformers 的 **24 倍**。vLLM 提供 OpenAI 兼容 API，支持连续批处理（Continuous Batching）、量化推理（AWQ/GPTQ/INT8）、多 GPU 张量并行等生产级特性。
+
+> 参考：[vLLM 官方文档](https://docs.vllm.ai/) | [vLLM GitHub](https://github.com/vllm-project/vllm) | [PagedAttention 论文](https://arxiv.org/abs/2309.06180)
+
+#### 为什么需要 KV Cache？
+
+在 Transformer 的自回归解码过程中，每个新 token 的生成都需要对**所有历史 token** 计算注意力（Attention）。如果不做缓存，每生成一个 token 就要重新计算所有历史 Key 和 Value 矩阵，计算量呈 **O(n²)** 增长。
+
+**KV Cache** 的核心思想是：将已计算过的 Key 和 Value 矩阵缓存到显存中，生成下一个 token 时只需计算新 token 的 Query，然后与缓存的 K/V 做注意力运算。这样每个 step 的计算量降为 **O(n)**，推理速度大幅提升。
+
+```
+无 KV Cache: 每步重新计算所有 K/V → O(n²) 计算量
+有 KV Cache: 缓存历史 K/V，仅计算增量 → O(n) 计算量
+```
+
+然而，KV Cache 也带来了新的挑战——**显存碎片化**。每个请求的 KV Cache 大小不同（取决于序列长度），频繁的分配与释放导致显存碎片，实际可用显存远低于理论值。
+
+#### PagedAttention 如何解决显存碎片化？
+
+PagedAttention 借鉴了操作系统中**虚拟内存分页**的思想，将 KV Cache 划分为固定大小的 **Block**（类似内存页），每个 Block 可存储固定数量 token 的 K/V 矩阵。这些 Block 在物理显存中不需要连续，通过**页表**映射到逻辑序列。
+
+```
+传统方案（连续分配）:
+  Req A: [████████████░░░░░░░░░░░░░░░░] 预分配 2048 tokens，实际只用 800
+  Req B: [████████░░░░░░░░░░░░░░░░░░░░] 预分配 2048 tokens，实际只用 500
+  → 内部碎片 ~60%，外部碎片严重
+
+PagedAttention（分页分配）:
+  Block 0: [Req A tok 0-15]
+  Block 1: [Req B tok 0-15]
+  Block 2: [Req A tok 16-31]
+  Block 3: [Req B tok 16-31]
+  Block 4: [Req A tok 32-47]
+  ...
+  → 按需分配，零内部碎片，显存利用率可达 96%
+```
+
+**PagedAttention 的核心优势**：
+
+- **零内部碎片**：按 Block 粒度按需分配，不再预分配最大长度
+- **显存共享**：并行采样（Beam Search）或前缀缓存场景下，多个序列可共享同一组物理 Block
+- **高吞吐**：显存利用率从传统方案的 20-40% 提升至 **>90%**，单 GPU 可同时服务更多请求
+
+**关键参数**（本工具自动寻优的对象）：
+| 参数 | 说明 | 典型值 |
+|------|------|--------|
+| `gpu_memory_utilization` | GPU 显存中用于 KV Cache 的比例 | 0.80 - 0.95 |
+| `block_size` | 每个 KV Cache Block 的 token 数 | 8 / 16 / 32 |
+| `max_num_seqs` | 最大并发序列数 | 32 - 256 |
+| `enable_chunked_prefill` | 将长 Prefill 分块处理，避免阻塞解码 | true/false |
+| `max_num_batched_tokens` | 单次 Prefill 最大 token 数 | 2048 - 8192 |
+
+### 用法
+
+```bash
+# 基本用法：对指定模型运行网格搜索
+python -m benchmark.kv_cache_tuner \
+    --model meta-llama/Llama-2-7b-hf \
+    --port 8000
+
+# 自定义网格搜索范围
+python -m benchmark.kv_cache_tuner \
+    --model Qwen/Qwen2.5-7B-Instruct \
+    --gmu-values 0.80 0.85 0.90 \
+    --bs-values 16 32 \
+    --mns-values 32 64 128 \
+    --rounds 3 \
+    --prompts 50 \
+    --concurrency 8
+
+# 指定输出目录
+python -m benchmark.kv_cache_tuner \
+    --model meta-llama/Llama-2-7b-hf \
+    --output-dir ./tuning_results
+
+# 禁用图表生成
+python -m benchmark.kv_cache_tuner \
+    --model meta-llama/Llama-2-7b-hf \
+    --no-plots
+```
+
+### 命令行参数
+
+| 参数                    | 说明                          | 默认值           |
+| ----------------------- | ----------------------------- | ---------------- |
+| `--model`               | 模型名称或路径（必填）        | -                |
+| `--port`                | vLLM 服务端口                 | 8000             |
+| `--host`                | vLLM 服务地址                 | 127.0.0.1        |
+| `--gmu-values`          | gpu_memory_utilization 搜索值 | 0.80 0.85 0.90   |
+| `--bs-values`           | block_size 搜索值             | 16 32            |
+| `--mns-values`          | max_num_seqs 搜索值           | 32 64 128        |
+| `--bt-values`           | max_num_batched_tokens 搜索值 | None 4096 8192   |
+| `--no-chunked-prefill`  | 禁用 chunked_prefill 搜索     | False            |
+| `--rounds`              | 每组配置压测轮数              | 3                |
+| `--prompts`             | 每轮请求数                    | 50               |
+| `--concurrency`         | 并发数                        | 8                |
+| `--max-tokens`          | 最大生成 token 数             | 512              |
+| `--timeout`             | 超时时间（秒）                | 300              |
+| `--gpu-mem-max`         | 显存安全阈值（%）             | 92.0             |
+| `--p99-latency-max`     | P99 延迟安全阈值（秒）        | 2.0              |
+| `--consecutive-oom-max` | 连续 OOM 上限                 | 2                |
+| `--output-dir`          | 输出目录                      | ./tuning_results |
+| `--no-plots`            | 不生成图表                    | False            |
+
+### 输出文件
+
+```
+tuning_results/
+├── tuning_results.json              # 完整调优结果
+├── kv_cache_throughput_vs_config.png # 吞吐量对比图
+├── kv_cache_heatmap.png             # 参数热力图
+├── kv_cache_performance_gain.png    # 性能收益对比图
+└── kv_cache_oom_distribution.png    # OOM 分布图
+```
+
+### 运行测试
+
+```bash
+cd ai-saas-week4
+source venv/bin/activate
+PYTHONPATH="$(pwd)" python -m pytest tests/test_gpu_scanner.py tests/test_kv_cache_config.py tests/test_prefill_adjuster.py tests/test_vllm_lifecycle.py tests/test_kv_cache_runner.py tests/test_kv_cache_visualization.py tests/test_kv_cache_integration.py tests/test_kv_cache_e2e.py -v
+```
+
 ## 命令行参数
 
 ### main.py（Benchmark）
@@ -432,6 +587,15 @@ PYTHONPATH="$(pwd)" python -m pytest tests/test_gateway_*.py -v
 - ✅ OpenAI 官方 SDK 零改造直连
 - ✅ 网关额外延迟 <50ms
 - ✅ SSE 流稳定不断连
+
+### KV Cache 寻优验收
+
+- ✅ 找到最优 KV Cache 配置
+- ✅ 并发承载量提升 >30%
+- ✅ 零 OOM
+- ✅ Cache 利用率 >85%
+- ✅ 显存利用率 >80%
+- ✅ 长文本（8k+ tokens）延迟降 >20%
 
 ## 许可证
 
