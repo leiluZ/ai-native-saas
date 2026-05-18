@@ -9,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from gateway.config import settings
 from gateway.middleware import setup_middleware
 from gateway.registry import ModelEntry, model_registry
+from gateway.router.health_checker import get_health_checker
+from gateway.routes.admin import router as admin_router
 from gateway.routes.chat import router as chat_router
 from gateway.routes.embeddings import router as embeddings_router
 from gateway.routes.health import router as health_router
@@ -64,8 +66,12 @@ async def lifespan(app: FastAPI):
     register_default_models()
     await model_registry.start_health_check_loop()
 
+    health_checker = get_health_checker()
+    health_checker.start()
+
     yield
 
+    await health_checker.stop()
     await model_registry.stop_health_check_loop()
     logger.info(f"Shutting down {settings.app_name}")
 
@@ -85,12 +91,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-setup_middleware(app, exclude_paths=["/health", "/docs", "/openapi.json", "/redoc", "/"])
+setup_middleware(app, exclude_paths=["/health", "/docs", "/openapi.json", "/redoc", "/", "/admin"])
 
 app.include_router(health_router)
 app.include_router(chat_router)
 app.include_router(models_router)
 app.include_router(embeddings_router)
+app.include_router(admin_router)
 
 
 @app.get("/")
