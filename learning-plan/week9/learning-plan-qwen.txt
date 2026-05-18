@@ -1,0 +1,273 @@
+# Week 9: CI/CD 流水线与生产监控
+
+## 🎯 目标
+搭建自动化 CI/CD 与可观测性体系。掌握从代码提交到自动化部署、镜像安全加固、指标/日志/链路追踪采集、SLO 告警路由、零停机发布与标准化 Runbook 的全流程，交付高可靠、可观测、易运维的生产级 AI 服务。
+
+---
+
+## Day 1：GitHub Actions (Lint->Test->Build->Deploy)
+- **目标**：建立标准化 CI/CD 流水线，实现 PR 合并后自动构建、测试与部署至测试环境。
+- **实操**：
+  1. 编写 `.github/workflows/ci-cd.yml`，划分 `lint -> test -> build -> deploy-staging` 四个 Stage。
+  2. 配置依赖缓存（`actions/cache` for pip/uv & docker layers），加速构建与测试环节。
+  3. 集成环境密钥管理（`secrets`），实现测试环境凭据自动注入，禁止硬编码。
+  4. 配置矩阵测试（Python 3.10/3.11/3.12），单元测试覆盖率阈值拦截（`coverage >= 80%`）。
+  5. 失败自动通知：推送结果至企业微信/Slack/钉钉 Webhook，附 Commit ID 与失败日志链接。
+- **Prompt 模板**：
+```md
+编写生产级 GitHub Actions CI/CD 流水线，要求：
+1. 严格四阶段：lint (ruff/mypy) -> test (pytest+coverage) -> build (docker) -> deploy-staging
+2. 依赖与层缓存优化：pip/uv cache + docker layer cache，构建耗时缩短 >40%
+3. 环境隔离：staging/prod 使用独立 secrets，支持环境变量动态注入与 .env 校验
+4. 质量门禁：单元测试覆盖率 <80% 阻断流水线，集成 SonarQube 或 code-quality 检查
+5. 失败通知：失败时自动推送 Commit 链接、错误堆栈、责任人至指定 IM 群组
+6. 支持手动触发与定时触发，提供 dry-run 模式供本地调试
+```
+- **验收**：
+  - ✅ PR 合并后自动触发流水线，全程零人工干预
+  - ✅ Lint/Test 覆盖率门禁生效，失败精准阻断
+  - ✅ Staging 环境自动部署，健康检查通过
+  - ✅ 构建缓存命中率高，流水线总耗时 <5min
+
+---
+
+## Day 2：Docker 多阶段构建 + Trivy 扫描
+- **目标**：优化镜像体积与安全基线，实现依赖裁剪与高危漏洞拦截。
+- **实操**：
+  1. 编写多阶段 `Dockerfile`：`builder` 阶段编译/安装依赖，`runtime` 阶段仅复制必要二进制与 wheels。
+  2. 使用 `python:3.11-slim` 或 `distroless` 作为基础镜像，移除非必要系统工具（`curl`, `vim`, `gcc`）。
+  3. 集成 `trivy` 扫描步骤，配置 `--severity HIGH,CRITICAL --exit-code 1`，阻断含高危漏洞的镜像推送。
+  4. 优化层合并与 `.dockerignore`，排除 `.git`, `tests`, `__pycache__`, 本地缓存。
+  5. 输出镜像体积对比报告（Before vs After），记录安全扫描结果与修复建议。
+- **Prompt 模板**：
+```md
+构建安全轻量化 Docker 多阶段构建与 Trivy 扫描流水线，要求：
+1. 多阶段设计：builder 负责依赖编译，runtime 仅保留最小运行集，使用 slim/distroless 基座
+2. 安全扫描：CI 中集成 trivy image 扫描，CRITICAL/HIGH 漏洞直接阻断推送，输出 HTML/JSON 报告
+3. 体积优化：合并 RUN 指令，清理 apt/yum/pip cache，.dockerignore 排除非生产文件
+4. 非 root 运行：创建专用用户，设置文件权限，禁用特权模式
+5. 提供镜像对比数据：体积缩减比例、依赖数量、启动耗时，附优化前后 diff
+6. 支持本地一键构建与推送至私有 Harbor/ECR，自动打标（git sha + version）
+```
+- **验收**：
+  - ✅ 镜像体积优化 >40%，启动时间下降 >30%
+  - ✅ Trivy 扫描零 CRITICAL/HIGH 漏洞，CI 拦截生效
+  - ✅ 非 root 运行，权限最小化
+  - ✅ 构建过程幂等，支持本地与 CI 一致行为
+
+---
+
+## Day 3：Prometheus + Grafana + Loki 监控栈
+- **目标**：搭建 PLG（Prometheus/Loki/Grafana）可观测性基础设施，实现指标与日志统一采集。
+- **实操**：
+  1. 编写 `docker-compose.yml` 编排 `prometheus`, `grafana`, `loki`, `promtail`, `node-exporter`。
+  2. 配置 `prometheus.yml` 自动发现与抓取规则，集成应用 `/metrics` 端点与系统指标。
+  3. 配置 `promtail` 采集容器 stdout/stderr 与结构化 JSON 日志，推送至 Loki。
+  4. 使用 Grafana Provisioning 自动注入数据源，导入 FastAPI/系统/业务看板模板。
+  5. 验证数据链路：模拟请求 -> 指标上报 -> 日志写入 -> Grafana 面板实时刷新。
+- **Prompt 模板**：
+```md
+搭建 PLG 可观测性全栈与 Grafana 自动配置，要求：
+1. docker-compose 编排 prometheus + loki + promtail + grafana + node-exporter，网络隔离与端口映射清晰
+2. prometheus.yml 配置 scrape_configs，自动发现容器 label，采集应用 /metrics 与系统指标
+3. promtail 配置 pipeline_stages 解析 JSON 日志，提取 trace_id/status_code/endpoint，推送至 loki
+4. Grafana provisioning：自动创建数据源，导入官方 FastAPI/Node 仪表盘，设置默认组织与权限
+5. 提供数据链路验证脚本：模拟 QPS 请求，校验 Prometheus 指标增量与 Loki 日志写入
+6. 持久化配置：Prometheus TSDB、Loki chunks/indexes、Grafana dashboards 挂载 volume
+```
+- **验收**：
+  - ✅ `docker-compose up` 一键拉起，服务间网络互通
+  - ✅ Prometheus 抓取正常，指标延迟 <15s
+  - ✅ Loki 日志可搜索，按 trace_id/level/endpoint 过滤流畅
+  - ✅ Grafana 看板自动加载，QPS/延迟/错误率实时刷新
+
+---
+
+## Day 4：结构化 JSON 日志 + TraceID 透传
+- **目标**：实现全链路请求追踪与标准化日志输出，支撑跨服务故障快速定位。
+- **实操**：
+  1. 集成 `structlog` 或 `loguru`，替换标准 logging，强制输出 JSON 格式。
+  2. 编写 FastAPI 中间件：请求入口生成 `trace_id`，注入 `contextvars`，透传至下游 HTTP/gRPC 请求头 (`X-Trace-Id`)。
+  3. 日志字段标准化：包含 `timestamp`, `level`, `trace_id`, `span_id`, `endpoint`, `duration_ms`, `status_code`, `user_id`。
+  4. 配置 Loki 标签与索引优化：仅将高基数查询字段作为 label，其余存于 stream，控制内存开销。
+  5. 验证链路完整性：触发完整请求流，在 Grafana/Loki 中通过 `trace_id` 串联所有微服务日志与指标。
+- **Prompt 模板**：
+```md
+实现全链路 TraceID 透传与结构化 JSON 日志中间件，要求：
+1. 基于 FastAPI 中间件生成唯一 trace_id，注入 contextvars，自动附加至响应头 X-Trace-Id
+2. 集成 structlog/loguru，强制 JSON 输出，字段包含 trace_id/span_id/endpoint/duration/status/user
+3. 下游调用透传：aiohttp/httpx 请求自动携带 X-Trace-Id，支持异步上下文传递
+4. Loki 兼容：日志流按 service/env 打标签，高基数字段存入 JSON body 避免 label 爆炸
+5. 采样策略：ERROR/CRITICAL 100% 保留，INFO 按 20% 采样，DEBUG 本地开发开启
+6. 提供链路验证用例：单请求触发多下游调用，Loki 中通过 trace_id 一键聚合全量日志
+```
+- **验收**：
+  - ✅ 所有日志 JSON 结构化，零非结构化文本落盘
+  - ✅ TraceID 全链路透传，跨服务/中间件无断裂
+  - ✅ Loki 标签基数受控，查询延迟 <2s
+  - ✅ Grafana 中 TraceID 串联日志与指标完整可查
+
+---
+
+## Day 5：SLO 定义与 PagerDuty/钉钉告警
+- **目标**：基于业务指标定义服务水平目标，配置智能告警路由与防疲劳策略。
+- **实操**：
+  1. 定义核心 SLO：可用性 ≥99.9%，P99 延迟 ≤2s，错误率 ≤1%，错误预算（Error Budget）计算。
+  2. 编写 Prometheus Recording Rules 预聚合指标，配置 Alerting Rules 阈值触发。
+  3. 配置 Alertmanager：按服务/环境分组（`group_by`），设置静默期、抑制规则、升级策略（P1->P3）。
+  4. 集成 Webhook：对接 PagerDuty / 钉钉机器人，支持富文本通知、告警去重、ACK 状态回传。
+  5. 告警演练：模拟 SLO  breach，验证通知触达、分组聚合、防抖动（`for` 窗口）与恢复通知。
+- **Prompt 模板**：
+```md
+构建 SLO 告警规则与 Alertmanager 智能路由体系，要求：
+1. 定义 3 个核心 SLO：可用性、P99 延迟、错误率，提供 Error Budget 计算 PromQL
+2. 告警规则：预聚合 Recording Rules 降基数，Alerting Rules 配置 threshold + for 防抖动窗口
+3. Alertmanager 路由：按 env/service 分组，设置 inhibit_rules 抑制级联告警，配置 repeat_interval
+4. 通知集成：钉钉/PagerDuty Webhook 对接，支持 @责任人、告警等级标识、一键 ACK 与升级
+5. 防疲劳机制：告警冷却期、静默规则模板、批量压缩通知，避免告警风暴
+6. 提供演练脚本：模拟指标超标，验证触达延迟 <1min，恢复通知准确，无重复告警
+```
+- **验收**：
+  - ✅ SLO 规则准确，Error Budget 可计算与追踪
+  - ✅ 告警触发精准，防抖动与抑制规则生效
+  - ✅ 钉钉/PD 通知触达 <1min，格式清晰可操作
+  - ✅ 告警风暴抑制有效，零无效/重复通知
+
+---
+
+## Day 6：蓝绿部署/滚动更新 + 零停机回滚
+- **目标**：实现生产环境平滑发布与故障快速回退，保障业务连续性。
+- **实操**：
+  1. 设计发布策略：基于 Nginx/Traefik 或 Docker Compose 实现流量切换，支持蓝绿/金丝雀模式。
+  2. 编写发布脚本：拉取新镜像 -> 启动新容器 -> 健康检查门控（HTTP 200 + DB 连通） -> 切换流量权重。
+  3. 实现零停机回滚：保留上一版本镜像与容器配置，触发回滚命令后 10s 内切回旧版本流量。
+  4. 自动化验证：切换过程中持续发送探测请求，记录 5xx 比例，验证 <0.1% 短暂抖动可接受。
+  5. 版本管理：镜像标签遵循 `git-sha + env + build-id`，发布记录写入审计日志。
+- **Prompt 模板**：
+```md
+编写零停机发布与快速回滚流水线，要求：
+1. 支持蓝绿/滚动更新：通过 Nginx upstream 权重调整或 Traefik label 实现平滑流量迁移
+2. 健康门控：新容器启动后执行 readiness probe（HTTP + 依赖检查），失败自动终止切换
+3. 回滚机制：一键切换至上一稳定版本，流量回切延迟 <10s，状态无损
+4. 发布验证：脚本持续发送合成请求，记录切换期间 5xx/超时比例，输出发布报告
+5. 版本追溯：镜像打标规范，发布元数据（时间、Commit、执行者、回滚标记）写入审计表
+6. 兼容 CI/CD：GitHub Actions 可调用，支持人工审批门禁（Production 环境）
+```
+- **验收**：
+  - ✅ 发布过程零 5xx 用户感知，健康检查门控严格
+  - ✅ 一键回滚生效，流量切换 <10s
+  - ✅ 发布报告完整，版本标签与审计记录可追溯
+  - ✅ 脚本支持人工审批与 CI 自动触发双模式
+
+---
+
+## Day 7：Runbook 编写 (故障排查/应急预案)
+- **目标**：沉淀标准化运维手册，实现故障响应自动化与知识资产化。
+- **实操**：
+  1. 编制 Top 5 故障场景 Runbook：高延迟/SLO  breached、OOM/高 CPU、DB/Redis 连接池耗尽、日志暴涨、安全告警。
+  2. 标准化排查路径：现象识别 -> Grafana/Loki 快速定位 -> 关键诊断命令 -> 应急止血操作 -> 根因分析。
+  3. 集成自动化脚本：一键收集诊断快照（`diag-collect.sh`）、自动扩容/降级开关、日志清理策略。
+  4. 编写事后复盘模板（Post-Mortem）：时间线、影响范围、根因、改进项、Owner 与 Deadline。
+  5. 版本化管理：Markdown + MkDocs/Confluence 托管，支持 PR 审核与变更追踪。
+- **Prompt 模板**：
+```md
+构建 SRE Runbook 与自动化应急预案体系，要求：
+1. 覆盖 5 大核心场景：SLO  breach、资源耗尽、依赖宕机、日志风暴、安全事件
+2. 标准化排查流：现象 -> 看板定位 -> 诊断命令 -> 止血操作 -> 恢复验证，附截图与 PromQL/Loki 查询
+3. 自动化脚本：diag-collect.sh 一键导出指标/日志/配置，auto-scale/auto-downgrade 开关集成 CI
+4. Post-Mortem 模板：时间线、影响面、5 Whys 根因、Action Items 跟踪，支持 Jira/飞书自动创建
+5. 版本管理：Markdown 结构，PR 审核发布，变更日志清晰，支持全文检索
+6. 提供演练指南：每月故障注入测试（Chaos），验证 Runbook 有效性并更新
+```
+- **验收**：
+  - ✅ Runbook 覆盖 Top 5 故障，排查路径清晰可执行
+  - ✅ 诊断与应急脚本一键运行，止血操作标准化
+  - ✅ Post-Mortem 模板完整，改进项可追踪闭环
+  - ✅ 文档版本化管理，支持 PR 审核与定期演练
+
+---
+
+## 每日验收标准
+
+| Day | 验收条件 |
+|-----|---------|
+| D1 | PR 合并自动触发流水线；Lint/Test/Build/Deploy 全链路通过；失败通知准确；耗时 <5min |
+| D2 | 镜像体积优化 >40%；Trivy 零 CRITICAL/HIGH；非 root 运行；构建幂等可追溯 |
+| D3 | `docker-compose` 一键拉起 PLG 栈；Prometheus/Loki 抓取正常；Grafana 看板实时刷新 |
+| D4 | 全量日志 JSON 结构化；TraceID 跨服务透传无断裂；Loki 标签基数受控；链路一键聚合 |
+| D5 | SLO 规则准确；告警防抖动/抑制生效；钉钉/PD 触达 <1min；零告警风暴 |
+| D6 | 蓝绿/滚动发布零 5xx；健康门控严格；一键回滚 <10s；发布报告与审计完整 |
+| D7 | Runbook 覆盖 Top 5 场景；诊断/应急脚本一键运行；Post-Mortem 模板可追踪闭环 |
+
+---
+
+## 最终验收标准
+- ✅ PR 合并后自动部署测试环境，流水线耗时 <5min，质量门禁拦截准确
+- ✅ 生产镜像无高危漏洞（Trivy CRITICAL/HIGH=0），体积优化 >40%，非 root 运行
+- ✅ Grafana 实时显示 QPS/延迟/错误率，Loki 日志与 TraceID 全链路串联可查
+- ✅ SLO 定义清晰，告警路由智能，触达延迟 <1min，防疲劳机制生效
+- ✅ 蓝绿/滚动发布零停机，回滚 <10s，版本审计完整
+- ✅ Runbook 标准化，Top 5 故障可一键诊断/止血，Post-Mortem 流程可闭环
+
+---
+
+## 高频 Prompt 模板
+1. **GitHub Actions CI/CD 流水线 Prompt**
+   - Lint/Test/Build/Deploy 四阶段门禁
+   - 依赖与 Docker 层缓存优化
+   - 失败自动通知与环境隔离
+2. **Docker 多阶段构建与 Trivy 安全扫描 Prompt**
+   - Slim/Distroless 基座与层合并
+   - CRITICAL/HIGH 漏洞 CI 阻断
+   - 体积对比与非 root 权限配置
+3. **PLG 可观测性栈搭建 Prompt**
+   - docker-compose 编排与网络隔离
+   - Prometheus scrape_configs 与 Promtail pipeline
+   - Grafana Provisioning 与看板自动导入
+4. **TraceID 透传与结构化 JSON 日志 Prompt**
+   - FastAPI 中间件生成与 contextvars 注入
+   - 下游 HTTP/gRPC 自动透传
+   - Loki 标签优化与采样策略
+5. **SLO 定义与 Alertmanager 智能告警 Prompt**
+   - Error Budget PromQL 与防抖动窗口
+   - 分组/抑制/升级路由配置
+   - 钉钉/PagerDuty 对接与防风暴策略
+6. **零停机发布与快速回滚 Prompt**
+   - Nginx/Traefik 权重切换与健康门控
+   - 一键回滚 <10s 逻辑
+   - 发布验证脚本与版本审计
+7. **SRE Runbook 与应急预案 Prompt**
+   - Top 5 故障排查路径与诊断命令
+   - 自动化止血脚本与 Post-Mortem 模板
+   - 文档版本管理与 Chaos 演练指南
+
+---
+
+## 动态调整建议
+- **无 K8s 环境**：
+  - Day 3/6 全部基于 `docker-compose + Nginx/Traefik` 实现，逻辑与 K8s Deployment/Ingress 完全等价
+  - 告警与发布脚本改为 shell/python 编排，保留核心 SRE 思想
+- **日志量极大（TB 级/日）**：
+  - Day 4 优先开启 Loki `compactor` 与 `boltdb-shipper`，配置日志按天分块与过期清理
+  - 降低 INFO 采样率至 5%，ERROR 100%，控制存储成本
+- **告警疲劳严重**：
+  - Day 5 强化 `inhibit_rules` 与 `group_wait/group_interval`，合并同源告警，仅保留根因指标
+  - 引入 PagerDuty 智能路由或钉钉“智能去重”插件
+- **发布审批流程严格**：
+  - Day 6 在 GitHub Actions 增加 `environment: production` 人工审批门禁（Approval Required），通过后再执行流量切换
+- **团队 SRE 经验薄弱**：
+  - Day 7 优先跑通“高延迟”与“OOM”两个最高频场景 Runbook，逐步补齐其余模板
+  - 使用 Grafana `Alerting` 面板替代纯命令行，降低排障门槛
+
+---
+
+## 第 7 天自测清单
+- [ ] `ci-cd.yml` 一键运行，PR 合并后自动部署 Staging，零手动干预
+- [ ] 生产镜像 Trivy 扫描零高危，体积缩减 >40%，`docker run` 非 root 启动成功
+- [ ] PLG 栈 `docker-compose up` 正常，Prometheus/Loki 数据流稳定，Grafana 面板实时刷新
+- [ ] 所有请求日志 JSON 输出，TraceID 跨服务透传，Loki 一键聚合全链路日志
+- [ ] SLO 告警规则准确，钉钉/PD 触达 <1min，无重复/无效告警，抑制规则生效
+- [ ] 蓝绿/滚动发布脚本执行，健康检查通过，流量切换零 5xx，回滚 <10s
+- [ ] Runbook 覆盖 Top 5 故障，诊断/应急脚本可运行，Post-Mortem 模板已入库
+- [ ] 仓库包含：CI/CD 配置、Dockerfile、Trivy 规则、docker-compose PLG、日志中间件、告警路由、发布脚本、Runbook 文档
+- [ ] 能清晰口述：CI/CD 门禁设计、镜像安全基线、PLG 数据链路、SLO/告警路由策略、零停机发布原理与 Runbook 运维闭环
