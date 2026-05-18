@@ -1,0 +1,45 @@
+{
+  "metadata": {
+    "generated_at": "2026-05-18T17:48:21.608889",
+    "profiler_version": "1.0.0",
+    "config": {
+      "output_dir": "profiling_results",
+      "nsys_enabled": false,
+      "llm_enabled": false
+    }
+  },
+  "summary": {
+    "total_duration_us": 150149.8050020018,
+    "total_duration_ms": 150.15,
+    "total_events": 0,
+    "unique_ops": 0,
+    "total_cpu_time_us": 0,
+    "total_cuda_time_us": 0,
+    "gpu_memory_mb": 0.0,
+    "gpu_utilization_pct": 0.0
+  },
+  "phase_distribution": {},
+  "bottlenecks": [
+    {
+      "rank": 1,
+      "name": "Insufficient Profiling Data",
+      "category": "compute_intensive",
+      "phase": "compute",
+      "severity": 0.3,
+      "impact_us": 0.0,
+      "impact_pct": 0.0,
+      "detail": "Not enough data collected for bottleneck analysis. Consider increasing profiling duration or enabling more detailed tracing.",
+      "suggestion": "Profile specific compute kernels with Nsight Compute. Consider quantized inference (AWQ/INT8) to reduce compute requirements.",
+      "code_location": "benchmark/metrics.py:compute_metrics() aggregation",
+      "expected_improvement": "5-15% reduction through quantization",
+      "verification_command": "python -m profiler.main --target compute_intensive --before-profile Insufficient Profiling Data --verify-improvement --threshold 5.0",
+      "affected_events": []
+    }
+  ],
+  "natural_language_analysis": "# Performance Optimization Analysis\n\n## Executive Summary\n\nThe profiling session captured 0 unique operations over 150.15ms of execution time.\n\n## Bottleneck Analysis\n\n### 1. [MEDIUM] Insufficient Profiling Data\n\n**Category**: compute_intensive\n**Phase**: compute\n**Impact**: 0.0us (0.0% of total)\n\n**Detail**: Not enough data collected for bottleneck analysis. Consider increasing profiling duration or enabling more detailed tracing.\n\n**Optimization Strategy**:\nProfile specific compute kernels with Nsight Compute. Consider quantized inference (AWQ/INT8) to reduce compute requirements.\n\n**Affected Code**: `benchmark/metrics.py:compute_metrics() aggregation`\n**Expected Improvement**: 5-15% reduction through quantization\n**Verification**: `python -m profiler.main --target compute_intensive --before-profile Insufficient Profiling Data --verify-improvement --threshold 5.0`\n\n---\n\n## Priority-Ordered Action Plan\n\n1. **Insufficient Profiling Data** - 5-15% reduction through quantization\n   - Modify: `benchmark/metrics.py:compute_metrics() aggregation`\n   - Action: Profile specific compute kernels with Nsight Compute. Consider quantized inference (AWQ/INT8) to reduce compute requirem...\n\n## Next Steps\n\n1. Profile after each optimization to measure actual improvement\n2. Use the `--compare` flag to generate before/after comparison reports\n3. Monitor Prometheus metrics for latency/throughput trends in production\n4. Re-run profiling weekly to catch regressions early",
+  "flame_graph_data": {
+    "name": "root",
+    "value": 0.0
+  },
+  "top_operations": []
+}

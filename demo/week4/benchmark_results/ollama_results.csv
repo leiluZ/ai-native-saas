@@ -1,0 +1,2 @@
+request_id,prompt_length,completion_tokens,ttft,tpot,e2e_latency,throughput,success,error,timestamp
+req_0_ab18d70f,25,202,0.3620069910029997,0.26395516449503864,53.680950219000806,3.7629736279984938,True,,44558.323724112

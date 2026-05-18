@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flame Graph - Profiling Report</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; padding: 24px; }
+        h1 { color: #38bdf8; margin-bottom: 8px; }
+        .subtitle { color: #94a3b8; margin-bottom: 24px; font-size: 14px; }
+        .flame-container { position: relative; background: #1e293b; border-radius: 8px; overflow: hidden; }
+        .tooltip { position: absolute; background: #334155; padding: 8px 12px; border-radius: 6px; font-size: 12px; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 10; border: 1px solid #475569; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 24px; }
+        .stat-card { background: #1e293b; border-radius: 8px; padding: 16px; text-align: center; border: 1px solid #334155; }
+        .stat-value { font-size: 24px; font-weight: bold; color: #38bdf8; }
+        .stat-label { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+        .top-ops { margin-top: 24px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #334155; font-size: 13px; }
+        th { color: #94a3b8; }
+    </style>
+</head>
+<body>
+    <h1>Flame Graph</h1>
+    <p class="subtitle">Total Duration: 150149.8us | Events: 0 | GPU Memory: 0.0MB</p>
+    <div class="stats">
+        <div class="stat-card"><div class="stat-value">0</div><div class="stat-label">Total Events</div></div>
+        <div class="stat-card"><div class="stat-value">150150us</div><div class="stat-label">Total Duration</div></div>
+        <div class="stat-card"><div class="stat-value">0MB</div><div class="stat-label">GPU Memory</div></div>
+        <div class="stat-card"><div class="stat-value">0us</div><div class="stat-label">CUDA Time</div></div>
+    </div>
+    <div class="top-ops">
+        <h2 style="color:#94a3b8;margin-bottom:12px">Top Operations by CPU Time</h2>
+        <table>
+            <thead><tr><th>Operation</th><th>CPU Time (us)</th><th>CUDA Time (us)</th><th>Calls</th><th>Category</th></tr></thead>
+            <tbody>
+
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
