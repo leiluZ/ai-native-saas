@@ -1,0 +1,280 @@
+# Week 7: 高并发与流式架构优化
+
+## 🎯 目标
+优化高并发流式架构，实现连接池、降级策略与压测验证。掌握异步 I/O 深度调优、SSE/WebSocket 生产化、任务异步解耦、精准限流熔断、500 VU 压测闭环及 Nginx/Gunicorn 生产级部署，构建高可用、低延迟、可自愈的 AI API 服务。
+
+---
+
+## Day 1：FastAPI 异步深度优化（asyncpg/redis 连接池）
+
+- **目标**：掌握异步数据库与缓存连接池管理，消除事件循环阻塞，提升 I/O 吞吐。
+- **实操**：
+  1. 集成 `asyncpg`（PostgreSQL）与 `redis.asyncio`，配置连接池 min_size/max_size/max_idle 参数。
+  2. 使用 FastAPI `Depends` 实现请求级连接生命周期管理，确保请求结束自动 release。
+  3. 全链路异步化改造：替换同步 `requests`/`time.sleep` 为 `httpx`/`asyncio.sleep`。
+  4. 注入查询超时中间件（默认 3s），记录慢查询 TraceID。
+  5. 暴露连接池指标：active/idle/max/queue_depth，对接 Prometheus。
+  6. 输出优化前后 QPS、P95 延迟对比报告。
+- **Prompt 模板**：
+
+```md
+编写生产级 FastAPI 异步 I/O 优化方案，要求：
+
+1. 集成 asyncpg + redis.asyncio，配置连接池 min_size/max_size，支持心跳探测
+2. 使用 FastAPI Depends 管理连接生命周期，自动 acquire/release，杜绝泄漏
+3. 全链路异步化：扫描替换同步阻塞调用（requests → httpx, time.sleep → asyncio.sleep）
+4. 注入查询超时中间件：超时 3s 自动 cancel，记录慢查询 TraceID 与耗时
+5. 暴露 /metrics 端点：pool_size、free_size、queue_depth、connection_errors
+6. 输出优化前后对比：QPS、P50/P95 延迟、事件循环阻塞告警次数
+```
+
+- **验收**：
+  - 连接池健康稳定，零泄漏、零阻塞事件循环
+  - SQL/Redis 查询 P95 < 50ms，超时自动熔断
+  - 异步化覆盖率 100%，指标实时可监控
+
+## Day 2：SSE/WebSocket 生产化（心跳/重连/保序）
+
+- **目标**：实现工业级流式传输协议，保障断线重连、消息保序与零丢失。
+- **实操**：
+  1. 规范 SSE 响应头：`Content-Type: text/event-stream`、`Cache-Control: no-cache`、`Connection: keep-alive`。
+  2. 实现心跳保活：每 15s 发送 `: ping` 注释包，防止 Nginx/CDN 超时断开。
+  3. 客户端重连机制：指数退避（1s→2s→4s→8s）+ `Last-Event-ID` 断点续传。
+  4. 消息保序与去重：基于 event_id 单调递增 + 客户端滑动窗口去重。
+  5. 背压控制：服务端生成队列限流（1000 chunks），满额暂停推理，避免内存爆炸。
+  6. 全量流式 trace：每条流绑定 trace_id，记录 chunk 发送耗时。
+- **Prompt 模板**：
+
+```md
+构建生产级 SSE/WebSocket 流式传输架构，要求：
+
+1. 严格遵循 SSE 规范：event/data/id/retry 字段完整，:ping 心跳每 15s 发送
+2. 客户端重连：指数退避策略，携带 Last-Event-ID 实现断点续传
+3. 消息保序与去重：服务端 event_id 单调递增，客户端滑动窗口过滤重复
+4. 背压控制：生成队列上限 1000 chunk，满额暂停推理，释放后恢复
+5. 弱网测试：模拟 3s/10s 断线，验证消息完整性与顺序
+6. 日志追踪：每条流绑定 trace_id，记录 chunk 序列号与发送耗时
+```
+
+- **验收**：
+  - 心跳稳定不断连，代理层不主动关闭流
+  - 断线重连 < 3s，基于 Last-Event-ID 零消息丢失
+  - 背压机制生效，服务端内存水位平稳
+
+## Day 3：Celery/RQ 解耦长耗时任务
+
+- **目标**：将阻塞性长任务移出请求链路，实现异步执行、状态追踪与弹性扩容。
+- **实操**：
+  1. 部署 Celery（或 RQ）+ Redis Broker，配置 Worker 并发数与 Prefetch 策略。
+  2. 抽象长任务接口：文件解析、向量入库、批量推理、异步通知推送。
+  3. 实现任务状态机：PENDING → STARTED → SUCCESS/FAILURE/RETRY，提供 `/tasks/{id}` 状态查询。
+  4. 配置重试与幂等：指数退避重试（max_retries=3），基于 task_id + 分布式锁防重复。
+  5. 监控队列深度与 Worker 健康，配置告警（积压 > 500 或连续失败率 > 10%）。
+  6. 优雅停机：SIGTERM 捕获，等待 in-flight 任务完成再退出。
+- **Prompt 模板**：
+
+```md
+编写 Celery/RQ 异步任务解耦流水线，要求：
+
+1. 配置 Redis Broker/Backend，Worker 自动发现任务，并发数可配
+2. 标准任务接口：@task(bind=True)，返回 TaskResult（id/status/result/error）
+3. FastAPI 暴露 POST /tasks + GET /tasks/{id}，SSE 推送进度更新
+4. 重试与幂等：指数退避 max_retries=3，task_id 去重，分布式锁防并发
+5. 监控告警：队列深度、Worker 存活、失败率，对接 Prometheus
+6. 优雅停机：SIGTERM 等待当前任务完成，graceful_timeout=60s
+```
+
+- **验收**：
+  - 请求链路响应 < 200ms，长任务 100% 异步化
+  - 任务状态可追踪，SSE 进度推送实时准确
+  - 重试/幂等验证通过，无重复执行
+
+## Day 4：Redis 滑动窗口限流 + IP 封禁
+
+- **目标**：实现精准、低延迟的流量治理与恶意请求拦截。
+- **实操**：
+  1. 使用 Redis ZSET + Lua 脚本实现滑动窗口限流，支持多维策略（全局/IP/用户/路由）。
+  2. 配置动态阈值：常规请求 100 req/min，AI 生成 20 req/min，VIP 通道独立配额。
+  3. 实现 IP 封禁：连续 5xx > 5 次或暴力扫描触发自动 ban，TTL 可配，白名单绕过。
+  4. 封装 FastAPI 中间件：请求前置拦截，命中限流返回 `429` + `Retry-After` + `X-RateLimit-*` 头。
+  5. 限流指标上报：rate_limit_hits、ip_ban_count、quota_remaining。
+- **Prompt 模板**：
+
+```md
+实现 Redis 滑动窗口限流与 IP 封禁中间件，要求：
+
+1. ZSET + Lua 原子操作，窗口精度 < 100ms，支持 global/ip/user/route 多维 Key
+2. 分级配额：常规 100 req/min、AI 20 req/min、VIP 独立配额，配置热加载
+3. IP 封禁：连续 5xx ≥ 5 或异常 UA 触发 ban，TTL 可配，内部白名单绕过
+4. FastAPI 中间件前置拦截，429 响应带 Retry-After 与 X-RateLimit-Remaining
+5. 指标暴露：限流命中数、封禁 IP 数、配额余量，对接 Prometheus
+6. 性能要求：单请求限流开销 < 2ms，不阻塞异步事件循环
+```
+
+- **验收**：
+  - 滑动窗口限流精准，误差 < 1s
+  - IP 封禁自动触发，白名单 100% 绕过
+  - 429 响应符合 RFC 标准，中间件开销 < 2ms
+
+## Day 5：k6/Locust 压测（500 VU）+ 瓶颈定位
+
+- **目标**：通过高并发真实流量模拟，定位系统瓶颈并输出优化依据。
+- **实操**：
+  1. 编写 k6 或 Locust 压测脚本：混合流量（60% SSE 流式 / 30% 同步 API / 10% 异步任务）。
+  2. 配置压测曲线：Ramp-up 100 VU/min → Steady 500 VU（10min）→ Ramp-down。
+  3. 采集指标：P50/P95/P99 延迟、Throughput、Error Rate、HTTP 状态码分布。
+  4. 结合 py-spy、asyncio 诊断定位热点：事件循环阻塞、连接池争用、GC 停顿。
+  5. 生成压测报告：瓶颈拓扑图、优化建议、前后对比数据。
+- **Prompt 模板**：
+
+```md
+编写 500 VU 高并发压测与瓶颈定位流水线，要求：
+
+1. k6/Locust 脚本：混合 60% SSE / 30% 同步 / 10% 异步流量，比例可配
+2. 压测曲线：Ramp-up 10min → Steady 500 VU 10min → Ramp-down
+3. 全栈指标：P95/P99 延迟、吞吐、错误码、DB 连接池、Redis 命中率、Worker 队列
+4. 瓶颈定位：集成 py-spy + asyncio 诊断，输出阻塞调用栈、锁竞争、GC 热点
+5. 生成 Markdown 报告 + 图表（延迟曲线/吞吐柱状/资源热力图）
+6. 安全阈值：P95 > 2s 或 ErrorRate > 1% 自动终止测试
+```
+
+- **验收**：
+  - 500 VU 压测稳定运行，P95 < 2s，Error Rate < 1%
+  - 输出瓶颈定位报告与 ≥ 2 项可执行优化
+  - 压测脚本支持 CI/CD 一键触发
+
+## Day 6：降级与熔断（OOM 自动降级至缓存/轻量模型）
+
+- **目标**：构建系统级熔断与降级机制，保障极端负载下的服务可用性。
+- **实操**：
+  1. 集成熔断器（pybreaker 或自定义）：Closed → Open（超阈值）→ Half-Open（试探恢复）。
+  2. 资源监控探针：CPU > 90%、RAM > 85%、GPU VRAM > 92%、队列积压 > 1000 触发熔断。
+  3. 降级策略：OOM 时自动切换至 Redis 缓存响应或轻量模型（1.5B/3B 蒸馏版），保持接口兼容。
+  4. 客户端无感降级：返回 `X-Fallback-Mode: cache/lightweight` 头，前端提示"简化模式"。
+  5. 熔断日志与指标：记录状态切换、降级命中率、恢复耗时。
+- **Prompt 模板**：
+
+```md
+构建全链路熔断与智能降级系统，要求：
+
+1. 熔断状态机：Closed/Open/Half-Open，失败率 + 延迟双阈值触发
+2. 资源探针：CPU > 90% / RAM > 85% / GPU VRAM > 92% / 队列 > 1000 即熔断
+3. 降级策略：自动 fallback 至 Redis 缓存（TTL 5min）或轻量模型，接口签名完全兼容
+4. 客户端透传：X-Fallback-Mode 头标识降级状态，前端优雅提示
+5. 指标告警：熔断次数、降级命中率、恢复耗时，对接 Prometheus/钉钉
+6. 安全机制：降级期间屏蔽非核心写操作，保护核心数据一致性
+```
+
+- **验收**：
+  - 熔断触发准确，降级切换 < 500ms
+  - 客户端无 5xx 崩溃，Half-Open 自动恢复无震荡
+  - 熔断/降级全链路可审计
+
+## Day 7：Uvicorn/Gunicorn/Nginx 生产配置
+
+- **目标**：完成生产级部署栈硬化，优化进程管理、反向代理、安全与可观测性。
+- **实操**：
+  1. Gunicorn 配置：UvicornWorker，workers=2*CPU+1，keepalive=65，backlog=2048。
+  2. Nginx 调优：关闭 proxy_buffering 保障 SSE/WS 实时性，配置 TLS 1.3 + HSTS。
+  3. 安全策略：CORS 白名单、隐藏 Server/X-Powered-By 头、Rate Limit 前置。
+  4. 健康检查：`/healthz` 返回 DB/Redis 状态，Nginx upstream 自动剔除故障节点。
+  5. 容器化交付：多阶段 Dockerfile，非 root 运行，docker-compose 编排全栈。
+  6. 日志 JSON 格式化，对接 Loki 日志聚合。
+- **Prompt 模板**：
+
+```md
+编写 Uvicorn/Gunicorn/Nginx 生产级部署配置，要求：
+
+1. Gunicorn：UvicornWorker，workers=2*CPU+1，backlog=2048，keepalive=65
+2. Nginx：proxy_buffering off（SSE/WS 必需），chunked_transfer_encoding on，TLS 1.3/HSTS
+3. 安全加固：CORS 白名单、隐藏 Server 头、基础 Rate Limit、CSP 头
+4. 健康检查：/healthz 返回 DB/Redis/Worker 状态，upstream 自动剔除故障节点
+5. Dockerfile 多阶段构建，非 root 用户，docker-compose 编排 app+redis+postgres+nginx
+6. 日志 JSON 格式化，stream 输出，支持 Loki 采集
+7. entrypoint.sh：依赖检测、连接池预热、优雅启停
+```
+
+- **验收**：
+  - Gunicorn/Nginx 启动零报错，Workers 按预期分配
+  - SSE/WS 通过代理零延迟、零断流
+  - 安全头/健康检查合规，docker-compose up 一键拉起全栈
+
+---
+
+## 每日验收标准
+
+| Day | 验收条件 |
+|-----|---------|
+| D1 | 连接池零泄漏/零阻塞；SQL/Redis P95 < 50ms；异步化覆盖率 100%；指标可监控 |
+| D2 | 心跳稳定不断连；断线重连 < 3s；基于 Event-ID 零丢失/乱序；背压生效 |
+| D3 | 请求链路 < 200ms；任务状态可追踪；重试/幂等验证通过；队列监控完整 |
+| D4 | 滑动窗口限流精准；IP 封禁自动触发；429 响应标准；中间件开销 < 2ms |
+| D5 | 500 VU 稳定；P95 < 2s，Error Rate < 1%；输出瓶颈报告 + ≥ 2 项优化 |
+| D6 | 熔断触发准确，降级 < 500ms；客户端无 5xx；Half-Open 自动恢复 |
+| D7 | Gunicorn/Nginx 正常；SSE/WS 代理零断流；安全/健康检查合规；全栈容器化 |
+
+## 最终验收标准
+
+- 500 并发 P95 < 2s，错误率 < 1%，全链路无雪崩
+- 断线重连 < 3s 无丢消息，SSE/WebSocket 保序与背压机制稳定运行
+- 滑动窗口限流与动态 IP 封禁精准生效，误杀率 0%
+- 熔断/降级全链路覆盖，OOM/高负载自动切换至缓存/轻量模型
+- k6/Locust 压测闭环完整，输出可复现瓶颈报告与优化清单
+- Uvicorn/Gunicorn/Nginx 生产配置硬化，安全/健康/容器化交付达标
+
+## 高频 Prompt 模板
+
+1. **FastAPI 异步连接池优化 Prompt**
+   - asyncpg/redis.asyncio 池配置 + Depends 生命周期管理
+   - 全链路异步化改造 + 同步调用拦截
+   - 查询超时控制 + 连接池指标暴露
+
+2. **SSE/WebSocket 生产化 Prompt**
+   - 标准 SSE 头 + 心跳保活
+   - Last-Event-ID 断点续传 + 滑动窗口去重
+   - 背压队列限流 + chunk 投递追踪
+
+3. **Celery/RQ 长任务解耦 Prompt**
+   - Broker/Backend 配置 + Worker 自动发现
+   - 任务状态机 + SSE 进度推送
+   - 指数退避重试 + 幂等控制 + 优雅停机
+
+4. **Redis 滑动窗口限流与 IP 封禁 Prompt**
+   - ZSET + Lua 原子滑动窗口
+   - 分级配额 + 动态封禁 + 白名单绕过
+   - 429 响应规范 + 中间件低开销实现
+
+5. **500 VU 高并发压测与瓶颈定位 Prompt**
+   - k6/Locust 混合流量 + Ramp-up 曲线
+   - P95/吞吐/错误率全栈采集
+   - py-spy/asyncio 阻塞诊断 + 报告生成
+
+6. **熔断与智能降级系统 Prompt**
+   - Closed/Open/Half-Open 状态机
+   - CPU/RAM/GPU/队列探针 + 阈值触发
+   - 缓存/轻量模型 Fallback + 客户端透传
+
+7. **Uvicorn/Gunicorn/Nginx 生产部署 Prompt**
+   - Workers 公式 + backlog/keepalive 调优
+   - Nginx SSE/WS 代理优化 + TLS/HSTS
+   - 健康检查 + 安全加固 + 多阶段容器化
+
+## 动态调整建议
+
+- **资源受限（单核 < 4GB RAM）**：D3 优先使用 RQ 替代 Celery；D5 压测降至 200 VU，关注趋势而非峰值。
+- **无高并发经验**：D1/D2 先跑通基础异步与 SSE，D4/D6 限流熔断可用 slowapi/tenacity 现成库快速落地。
+- **模型推理侧负载极重**：D6 降级优先对接 Week 5 导出的 GGUF Q4 轻量版，缓存层预计算高频 FAQ 回复。
+- **前端联调频繁**：D2 重连与 D6 降级策略需与前端对齐 Retry-After 与 X-Fallback-Mode 解析逻辑。
+- **团队偏向 Go/Java**：核心架构模式（滑动窗口限流、熔断状态机、背压队列）可迁移至 gin/redis 或 Spring Cloud Gateway + Resilience4j。
+
+## 第 7 天自测清单
+
+- [ ] FastAPI 连接池配置生效，零泄漏，异步调用全链路覆盖
+- [ ] SSE 心跳/重连/保序验证通过，断线 3s 内恢复且无消息丢失
+- [ ] Celery/RQ 长任务解耦完成，状态查询与重试幂等稳定
+- [ ] Redis 滑动窗口限流精准，IP 封禁自动触发，429 响应带标准头
+- [ ] k6/Locust 500 VU 压测通过，P95 < 2s，Error Rate < 1%，输出优化报告
+- [ ] 熔断触发准确，降级至缓存/轻量模型 < 500ms，客户端无崩溃
+- [ ] Gunicorn/Nginx 生产配置生效，SSE/WS 代理零断流，安全/健康检查合规
+- [ ] 仓库包含：异步池配置、SSE 中间件、任务队列脚本、限流 Lua、压测脚本、熔断器、部署配置
+- [ ] 能清晰口述异步 I/O 调优、流式保序、限流熔断策略、压测瓶颈定位与生产部署实践

@@ -25,6 +25,49 @@
 
 ---
 
+## 学习计划依赖关系
+
+> 详细依赖分析见 [learning-plan/dependencies.md](learning-plan/dependencies.md)
+
+大多数周可独立执行，但存在「弱耦合依赖」与「最佳执行顺序」：
+
+```
+强依赖（前置知识显著提升效率）
+   W4 私有化部署 ──→ W7 高并发优化 ──→ W9 CI/CD 监控
+   W5 领域微调   ──→ W8 长上下文安全
+
+弱依赖（建议顺序，但可跳过前置）
+   W1 ──→ W2 ──→ W3 ──→ W4
+
+完全独立（可任意顺序/并行）
+   W6 小程序端    W10 工作流标准化    W11 作品集    W12 面试
+```
+
+| 周次 | 独立执行 | 建议前置 | 关键依赖说明 |
+|:---:|:---:|:---:|:---|
+| W5 | ✅ 是 | - | 模型训练轨道，仅需 HuggingFace 模型 + GPU |
+| W6 | ✅✅ 完全独立 | 任意后端 | 只需 OpenAI 兼容 API，不依赖具体后端实现 |
+| W7 | ⚠️ 弱依赖 | W4 | 优化对象是 FastAPI+vLLM，也可用 Flask+Mock 替代 |
+| W8 | ⚠️ 弱依赖 | W5 | 安全策略通用，「模型注入防御」需理解微调模型行为 |
+| W9 | ⚠️ 弱依赖 | W4/W7 | 监控目标需有服务，但可先用 Hello World 练手 |
+| W10 | ✅ 是 | - | 方法论/流程规范，与具体技术栈解耦 |
+| W11 | ✅ 是 | 任意周产出 | 可基于任何一周的代码/博客/项目打磨 |
+| W12 | ✅ 是 | 任意周 | 总结性质，可穿插执行 |
+
+### 推荐执行路径
+
+| 角色定位 | 执行顺序 |
+|:---|:---|
+| **全栈工程师** | W4 → W5 → W7 → W8 → W9 → W6 → W10 → W11 → W12 |
+| **后端/Infra** | W4 → W7 → W9 → W8 → W10 → W12（可选 W5/W6/W11） |
+| **前端/移动端** | W6 → W10 → W11 → W12（可选 W4/W7 了解接口规范） |
+| **算法/研究员** | W5 → W8 → W4 → W7 → W10 → W12 |
+| **4 周速成** | W4（部署）→ W6（前端）→ W11（作品集）→ W12（面试） |
+
+> 🎯 所有后端周均输出 OpenAI 兼容接口，Week 6 只需标准 SSE 流即可对接。Week 10/12 的方法论与具体技术栈无关，可独立学习。
+
+---
+
 ## 每周详细内容
 
 ### [Week 1: AI-Native 环境初始化 & 基础 SaaS 骨架](ai-saas-week1/)
@@ -256,13 +299,18 @@ ai-native-saas/
 ├── ai-saas-week2/          # Week 2: LangGraph 多 Agent
 ├── ai-saas-week3/          # Week 3: RAG 管道
 ├── ai-saas-week4/          # Week 4: 私有化部署 & 量化加速
+├── ai-saas-week5/          # Week 5: 领域微调与 LoRA（计划中）
+├── ai-saas-week6/          # Week 6: 小程序端接入（计划中）
 ├── ...
 ├── learning-plan/          # 学习计划文档
 │   ├── ai_saas_learning_plan/    # 12周全栈路线图
+│   ├── dependencies.md           # 学习计划依赖关系
 │   ├── week1/
 │   ├── week2/
 │   ├── week3/
-│   └── week4/
+│   ├── week4/
+│   ├── ...
+│   └── week12/
 ├── .github/workflows/      # CI/CD 配置
 └── README.md               # 本文件
 ```
@@ -276,6 +324,15 @@ ai-native-saas/
 - [Week 2 详细计划](learning-plan/week2/learning-plan-original.md)
 - [Week 3 详细计划](learning-plan/week3/learning-plan-original.md)
 - [Week 4 详细计划](learning-plan/week4/learning-plan-original.md)
+- [Week 5 详细计划](learning-plan/week5/learning-plan-original.md)
+- [Week 6 详细计划](learning-plan/week6/learning-plan-original.md)
+- [Week 7 详细计划](learning-plan/week7/learning-plan-original.md)
+- [Week 8 详细计划](learning-plan/week8/learning-plan-original.md)
+- [Week 9 详细计划](learning-plan/week9/learning-plan-original.md)
+- [Week 10 详细计划](learning-plan/week10/learning-plan-original.md)
+- [Week 11 详细计划](learning-plan/week11/learning-plan-original.md)
+- [Week 12 详细计划](learning-plan/week12/learning-plan-original.md)
+- [依赖关系详细说明](learning-plan/dependencies.md)
 
 ---
 
