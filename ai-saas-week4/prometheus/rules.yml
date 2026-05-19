@@ -1,0 +1,75 @@
+groups:
+  - name: gateway_alerts
+    interval: 30s
+    rules:
+      - alert: GatewayDown
+        expr: up{job="gateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Gateway service is down"
+          description: "The gateway service at {{ $labels.instance }} has been down for over 1 minute."
+
+      - alert: HighRequestLatency
+        expr: histogram_quantile(0.99, rate(gateway_request_latency_seconds_bucket[5m])) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High P99 request latency (>500ms)"
+          description: "P99 latency for {{ $labels.endpoint }} is {{ $value }}s on instance {{ $labels.instance }}."
+
+      - alert: QueueBacklog
+        expr: gateway_queue_depth > 50
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Request queue backlog exceeds 50"
+          description: "Queue depth is {{ $value }} on instance {{ $labels.instance }}. System may be overloaded."
+
+      - alert: NoResponse
+        expr: rate(gateway_requests_total[2m]) == 0 and up{job="gateway"} == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Gateway has received no requests in 2 minutes"
+          description: "Gateway {{ $labels.instance }} is up but has received zero requests in the last 2 minutes."
+
+      - alert: HighErrorRate
+        expr: rate(gateway_errors_total[5m]) / rate(gateway_requests_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate (>5%)"
+          description: "Error rate is {{ $value | humanizePercentage }} on instance {{ $labels.instance }}."
+
+      - alert: HighVRAMUsage
+        expr: gateway_vram_usage_mb > 20000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High VRAM usage"
+          description: "VRAM usage is {{ $value }}MB on instance {{ $labels.instance }}."
+
+      - alert: LowCacheHitRate
+        expr: gateway_cache_hit_rate < 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low KV Cache hit rate (<50%)"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} on instance {{ $labels.instance }}."
+
+      - alert: HighCPUUsage
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage (>80%)"
+          description: "CPU usage is above 80% on {{ $labels.instance }}."

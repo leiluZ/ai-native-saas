@@ -1,3 +1,28 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Docker volumes
+prometheus_data/
+grafana_data/
+alertmanager_data/
+
+# Python virtual environment
+.venv/
+venv/
+
+# Environment files
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.egg-info/
+dist/
+build/

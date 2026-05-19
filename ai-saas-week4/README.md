@@ -170,6 +170,19 @@ graph TB
 | **前后对比**      | 优化前后 P99 延迟/吞吐/显存对比                  | `profiler/comparator.py`                 |
 | **一键启停**      | CLI 控制 Profiling 生命周期                      | `profiler/runner.py`, `profiler/main.py` |
 
+#### 7. 容器化部署与可观测性 (Day 7)
+
+| 模块               | 功能描述                                               | 关键文件                                    |
+| ------------------ | ------------------------------------------------------ | ------------------------------------------- |
+| **Dockerfile**     | 多阶段构建，镜像 < 500MB，/healthz 健康检查            | `Dockerfile.gateway`                        |
+| **docker-compose** | 一键编排 Gateway + Prometheus + Grafana + Alertmanager | `docker-compose.yml`                        |
+| **Prometheus**     | 指标采集，8 条告警规则                                 | `prometheus/prometheus.yml`, `rules.yml`    |
+| **Grafana**        | 预置 vLLM 推理仪表盘 (吞吐/延迟/缓存/VRAM)             | `grafana/dashboards/gateway-dashboard.json` |
+| **Alertmanager**   | Slack + 企业微信告警路由                               | `alertmanager/alertmanager.yml`             |
+| **Gateway 指标**   | /metrics 端点 (requests_total/latency/errors)          | `gateway/metrics.py`                        |
+| **K8s**            | Deployment + HPA (CPU/内存自动扩缩)                    | `k8s/deployment.yaml`, `k8s/hpa.yaml`       |
+| **验收测试**       | 9 项自动化验收检查                                     | `tests/test_day7_acceptance.py`             |
+
 ---
 
 ## 项目结构
@@ -234,10 +247,31 @@ ai-saas-week4/
 │   ├── test_router.py           # 路由决策引擎、健康检查 UT
 │   ├── test_router_integration.py    # 降级触发、流式聚合集成测试
 │   ├── test_router_e2e.py       # 完整路由流程 E2E 测试
+│   ├── test_day7_acceptance.py   # Day 7 验收测试 (容器化 + 可观测性)
 │   ├── test_gateway_*.py        # 网关各组件测试
 │   ├── test_kv_cache_*.py       # KV Cache 各组件测试
 │   └── test_benchmark_*.py      # Benchmark 各组件测试
-├── docker-compose.yml
+├── docker-compose.yml           # 推理栈编排 (vLLM + Ollama + Gateway)
+├── docker-compose.observability.yml  # 可观测性栈编排 (Prometheus + Grafana + Alertmanager)
+├── Dockerfile.gateway            # 多阶段 Docker 构建文件
+├── .dockerignore                 # Docker 构建排除规则
+├── prometheus/
+│   ├── prometheus.yml            # Prometheus 主配置 (scrape targets)
+│   └── rules.yml                 # 告警规则定义
+├── grafana/
+│   ├── provisioning/
+│   │   ├── datasources/
+│   │   │   └── prometheus.yml    # Grafana 数据源配置
+│   │   └── dashboards/
+│   │       └── default.yml       # Dashboard Provider 配置
+│   └── dashboards/
+│       └── gateway-dashboard.json # vLLM 推理仪表盘预置 JSON
+├── alertmanager/
+│   └── alertmanager.yml          # 告警路由 (Slack / 企业微信)
+├── k8s/
+│   ├── deployment.yaml           # K8s Deployment + Service
+│   ├── hpa.yaml                  # HPA 自动扩缩配置
+│   └── secret.yaml               # API Key 密钥
 ├── config.yaml
 ├── API-SPEC.md                  # 完整 API 功能规格说明书
 └── requirements.txt
@@ -586,6 +620,124 @@ python -m pytest tests/test_router_e2e.py -v
 
 ---
 
+## 容器化部署与可观测性 (Day 7)
+
+### 概述
+
+Day 7 构建了一个**生产级容器化部署与可观测性体系**，包括多阶段 Dockerfile、docker-compose 一键编排网关 + Prometheus + Grafana + Alertmanager + Node Exporter、预置 Dashboard、监控告警规则以及 Kubernetes HPA 配置。
+
+### 架构
+
+```
+                  ┌─────────────────────────────────────────────┐
+                  │              docker-compose                  │
+                  │                                             │
+  API Requests ──▶│  gateway:8080  ──▶  prometheus:9090         │
+                  │       │                │                    │
+                  │  /healthz (K8s)  /metrics (scrape target)   │
+                  │       │                │                    │
+                  │       └────────────────▼                    │
+                  │                   grafana:3000               │
+                  │              (vLLM Dashboard)                │
+                  │                        │                    │
+                  │                   alertmanager:9093          │
+                  │              (Slack / WeChat Work)           │
+                  │                                             │
+                  │              node_exporter:9100              │
+                  │              (Host CPU/Memory)               │
+                  └─────────────────────────────────────────────┘
+```
+
+### 核心配置
+
+| 模块             | 功能                        | 关键文件                                          |
+| ---------------- | --------------------------- | ------------------------------------------------- |
+| **Dockerfile**   | 多阶段构建，镜像 < 500MB    | `Dockerfile.gateway`                              |
+| **Compose**      | 一键编排全栈服务            | `docker-compose.yml`                              |
+| **Prometheus**   | 指标采集与告警规则          | `prometheus/prometheus.yml`, `rules.yml`          |
+| **Grafana**      | vLLM 推理仪表盘             | `grafana/dashboards/gateway-dashboard.json`       |
+| **Alertmanager** | 告警路由（Slack/企业微信）  | `alertmanager/alertmanager.yml`                   |
+| **Metrics 端点** | Gateway 指标暴露            | `gateway/metrics.py`, `gateway/routes/metrics.py` |
+| **Health Check** | K8s liveness/readiness 探测 | `/healthz` endpoint                               |
+| **K8s HPA**      | 基于 CPU/内存自动扩缩       | `k8s/hpa.yaml`, `k8s/deployment.yaml`             |
+
+### Prometheus 指标
+
+| 指标名称                          | 类型      | 说明                                 |
+| --------------------------------- | --------- | ------------------------------------ |
+| `gateway_requests_total`          | Counter   | 请求总数 (按 endpoint/method/status) |
+| `gateway_request_latency_seconds` | Histogram | 请求延迟分布                         |
+| `gateway_errors_total`            | Counter   | 错误计数                             |
+| `gateway_queue_depth`             | Gauge     | 当前队列深度                         |
+| `gateway_vram_usage_mb`           | Gauge     | GPU 显存用量                         |
+| `gateway_cache_hit_rate`          | Gauge     | KV Cache 命中率                      |
+
+### Grafana Dashboard
+
+预置仪表盘 `AI Gateway - vLLM Inference Dashboard` 包含以下面板:
+
+- **Overview**: P50/P99 延迟、吞吐量、错误率、队列深度、Cache 命中率、VRAM 用量
+- **Throughput**: 实时请求速率折线图
+- **Latency Percentiles**: P50/P95/P99 延迟百分位折线图
+- **System Resources**: CPU / Memory / VRAM 用量
+- **Error & Cache**: 错误率与 Cache 命中率趋势
+
+### 告警规则
+
+| 告警名称           | 触发条件                      | 严重级别 |
+| ------------------ | ----------------------------- | -------- |
+| GatewayDown        | `up{job="gateway"} == 0` > 1m | Critical |
+| HighRequestLatency | P99 > 500ms 持续 2m           | Warning  |
+| QueueBacklog       | `gateway_queue_depth > 50`    | Critical |
+| NoResponse         | 连续 2min 无请求              | Critical |
+| HighErrorRate      | 错误率 > 5% 持续 3m           | Warning  |
+| HighVRAMUsage      | VRAM > 20GB 持续 2min         | Warning  |
+| LowCacheHitRate    | Cache 命中率 < 50% 持续 5min  | Warning  |
+
+### 部署
+
+```bash
+# 1. 构建镜像
+docker compose build gateway
+
+# 2. 启动推理栈 (vLLM + Ollama + Gateway)
+docker compose up -d
+
+# 3. 启动可观测性栈 (Prometheus + Grafana + Alertmanager + Node Exporter)
+docker compose -f docker-compose.observability.yml up -d
+
+# 一键启动全栈 (合并两个 compose 文件)
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+
+# 4. 访问服务
+#    Gateway:        http://localhost:8080
+#    Prometheus:     http://localhost:9090
+#    Grafana:        http://localhost:3000 (admin/admin)
+#    Alertmanager:   http://localhost:9093
+
+# 5. 运行验收测试
+python3 tests/test_day7_acceptance.py
+
+# 6. 停止服务
+docker compose -f docker-compose.yml -f docker-compose.observability.yml down
+
+# Kubernetes 部署 (可选)
+kubectl apply -f k8s/secret.yaml
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/hpa.yaml
+```
+
+### 验收标准
+
+- ✅ `docker compose up` 一键拉起全栈
+- ✅ Prometheus 抓取 `/metrics` 正常
+- ✅ Grafana 面板实时刷新 (10s 刷新间隔)
+- ✅ 模拟故障触发告警 (队列积压/无响应/高延迟)
+- ✅ 资源占用符合预期 (Gateway 镜像 < 500MB)
+- ✅ K8s HPA 基于 CPU/内存利用率自动扩缩
+
+---
+
 ## 快速命令参考
 
 ```bash
@@ -601,6 +753,18 @@ uvicorn gateway.main:app --host 0.0.0.0 --port 8080 --reload
 
 # KV Cache 调优
 python -m benchmark.kv_cache_tuner --model Qwen/Qwen2.5-7B-Instruct --gmu-values 0.80 0.85 0.90
+
+# 容器化部署
+docker compose up -d                                    # 推理栈
+docker compose -f docker-compose.observability.yml up -d # 可观测性栈
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d  # 全栈
+docker compose -f docker-compose.yml -f docker-compose.observability.yml down
+
+# 验收测试
+python3 tests/test_day7_acceptance.py
+
+# K8s 部署
+kubectl apply -f k8s/deployment.yaml -f k8s/hpa.yaml
 
 # Profiling
 python -m profiler.main --target gateway --compare

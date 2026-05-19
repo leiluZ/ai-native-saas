@@ -14,6 +14,7 @@ from gateway.routes.admin import router as admin_router
 from gateway.routes.chat import router as chat_router
 from gateway.routes.embeddings import router as embeddings_router
 from gateway.routes.health import router as health_router
+from gateway.routes.metrics import router as metrics_router
 from gateway.routes.models import router as models_router
 
 
@@ -91,9 +92,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-setup_middleware(app, exclude_paths=["/health", "/docs", "/openapi.json", "/redoc", "/", "/admin"])
+setup_middleware(app, exclude_paths=["/health", "/healthz", "/metrics", "/docs", "/openapi.json", "/redoc", "/", "/admin"])
 
 app.include_router(health_router)
+app.include_router(metrics_router)
 app.include_router(chat_router)
 app.include_router(models_router)
 app.include_router(embeddings_router)
@@ -107,3 +109,8 @@ async def root():
         "version": settings.app_version,
         "docs": "/docs",
     }
+
+
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}

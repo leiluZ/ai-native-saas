@@ -12,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from gateway.config import settings
+from gateway.metrics import get_metrics_middleware
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,10 @@ class TracingMiddleware(BaseHTTPMiddleware):
         request.state.request_id = request_id
         request.state.start_time = time.time()
 
+        metrics_mw = get_metrics_middleware()
+        endpoint = request.url.path
+        method = request.method
+
         logger.info(
             f"Request started: {request.method} {request.url.path}",
             extra={"request_id": request_id},
@@ -67,6 +72,13 @@ class TracingMiddleware(BaseHTTPMiddleware):
         elapsed_ms = (time.time() - request.state.start_time) * 1000
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Response-Time-Ms"] = f"{elapsed_ms:.2f}"
+
+        metrics_mw.record_request_end(
+            request_id=request_id,
+            endpoint=endpoint,
+            method=method,
+            status_code=response.status_code,
+        )
 
         logger.info(
             f"Request completed: {request.method} {request.url.path} - {response.status_code} ({elapsed_ms:.2f}ms)",
