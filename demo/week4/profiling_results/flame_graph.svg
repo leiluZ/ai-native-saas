@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600">
+<style>
+  rect { stroke: #fff; stroke-width: 0.5; }
+  text { font-family: monospace; font-size: 12px; fill: #1a1a2e; }
+  .title { font-size: 16px; font-weight: bold; fill: #e2e8f0; }
+</style>
+<rect width="1200" height="600" fill="#0f172a"/>
+<text x="10" y="16" class="title">Flame Graph - Total: 1.0us</text>
+<rect x="0.0" y="20.0" width="1200.0" height="19" fill="#38bdf8" rx="2"><title>root (0.0us)</title></rect>
+<text x="3.0" y="34.0" clip-path="url(#clip-0)">root</text>
+</svg>

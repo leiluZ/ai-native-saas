@@ -1,0 +1,65 @@
+{
+  "_NOTE": "DEMO DATA -- hand-crafted to show what the pipeline WOULD produce on a real GPU+CUDA machine. NOT measured on this machine. Run 'python -m profiler.main --target gateway --compare' on a GPU machine to generate real data.",
+  "metadata": {
+    "compared_at": "2026-05-18T12:00:00",
+    "before_events": 2847,
+    "after_events": 2245
+  },
+  "metrics": {
+    "p50_latency_ms": {
+      "before": 45.2,
+      "after": 32.1,
+      "change_pct": -28.98,
+      "change_abs": -13.1,
+      "direction": "decreased",
+      "improved": true
+    },
+    "p99_latency_ms": {
+      "before": 185.6,
+      "after": 118.3,
+      "change_pct": -36.27,
+      "change_abs": -67.3,
+      "direction": "decreased",
+      "improved": true
+    },
+    "throughput_tokens_per_sec": {
+      "before": 85.3,
+      "after": 112.7,
+      "change_pct": 32.12,
+      "change_abs": 27.4,
+      "direction": "increased",
+      "improved": true
+    },
+    "gpu_memory_mb": {
+      "before": 24152.0,
+      "after": 18934.0,
+      "change_pct": -21.6,
+      "change_abs": -5218.0,
+      "direction": "decreased",
+      "improved": true
+    },
+    "cpu_time_ms": {
+      "before": 856.2,
+      "after": 623.4,
+      "change_pct": -27.19,
+      "change_abs": -232.8,
+      "direction": "decreased",
+      "improved": true
+    },
+    "cache_hit_rate": {
+      "before": 0.0,
+      "after": 0.0,
+      "change_pct": 0.0,
+      "change_abs": 0.0,
+      "direction": "unchanged",
+      "improved": false
+    }
+  },
+  "summary": {
+    "p99_latency_improvement_pct": 36.27,
+    "throughput_improvement_pct": 32.12,
+    "overall_improvement_pct": 34.2,
+    "passed_latency_threshold": true,
+    "passed_throughput_threshold": true
+  }
+}

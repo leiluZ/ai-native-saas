@@ -1,6 +1,6 @@
 """健康检查路由"""
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 
 from gateway.registry import model_registry
 
@@ -29,3 +29,12 @@ async def health_check(request: Request):
         "total_models": total_count,
         "request_id": getattr(request.state, "request_id", None),
     }
+
+
+@router.get("/healthz")
+async def healthz():
+    return Response(
+        content="ok",
+        media_type="text/plain",
+        status_code=200,
+    )

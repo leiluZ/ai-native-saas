@@ -1,0 +1,21 @@
+======================================================================
+  Bottleneck Analysis Report
+======================================================================
+
+  Profile Duration: 150149.8 us (150.15 ms)
+  Events Analyzed: 0
+  Bottlenecks Found: 1
+
+  --- Bottleneck #1 ---
+  Name:        Insufficient Profiling Data
+  Category:    compute_intensive
+  Phase:       compute
+  Severity:    30%
+  Impact:      0.0us (0.0%)
+  Detail:      Not enough data collected for bottleneck analysis. Consider increasing profiling duration or enabling more detailed tracing.
+  Code:        benchmark/metrics.py:compute_metrics() aggregation
+  Suggestion:  Profile specific compute kernels with Nsight Compute. Consider quantized inference (AWQ/INT8) to reduce compute requirements.
+  Expected:    5-15% reduction through quantization
+  Verify:      python -m profiler.main --target compute_intensive --before-profile Insufficient Profiling Data --verify-improvement --threshold 5.0
+
+======================================================================

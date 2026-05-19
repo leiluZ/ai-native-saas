@@ -1,11 +1,41 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir --default-timeout=120 -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+
+COPY requirements-gateway.txt requirements-gateway.txt 2>/dev/null || true
+
+RUN pip install --no-cache-dir --default-timeout=120 \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    fastapi>=0.110.0 \
+    uvicorn>=0.29.0 \
+    pydantic-settings>=2.2.1 \
+    httpx>=0.27.0 \
+    python-dotenv>=1.0.1 \
+    prometheus-client>=0.19.0
+
+FROM python:3.11-slim AS runtime
+
+LABEL maintainer="ai-saas-week4"
+LABEL description="OpenAI-compatible API Gateway with Prometheus metrics"
+
+RUN groupadd -r gateway && useradd -r -g gateway gateway
+
+WORKDIR /app
+
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
+COPY --from=builder /usr/local/bin/pip /usr/local/bin/pip
 
 COPY gateway/ ./gateway/
+COPY profiler/ ./profiler/
+
+RUN mkdir -p /app/data && chown -R gateway:gateway /app
 
 ENV GATEWAY_API_KEY=sk-gateway-default-key
 ENV RATE_LIMIT_PER_MINUTE=60
@@ -13,7 +43,13 @@ ENV GLOBAL_TIMEOUT=120.0
 ENV MAX_RETRIES=3
 ENV HEALTH_CHECK_INTERVAL=30
 ENV HEARTBEAT_INTERVAL=15.0
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8080
+
+HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=10s \
+    CMD curl -f http://localhost:8080/healthz || exit 1
+
+USER gateway
 
 CMD ["uvicorn", "gateway.main:app", "--host", "0.0.0.0", "--port", "8080"]
